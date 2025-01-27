@@ -1,10 +1,13 @@
 {
-    "trading_pairs": ["BTC/USDT", "ETH/USDT"],
+    "trading_pairs": [
+        "BTC/USDT",
+        "ETH/USDT"
+    ],
     "check_interval": 300,
     "grid_settings": {
         "BTC/USDT": {
             "grid_count": 15,
-            "investment_amount": 4000,
+            "investment_amount": 0.58,
             "price_range_percentage": 15,
             "min_profit_percentage": 0.5,
             "max_loss_percentage": 2.0,
@@ -13,7 +16,7 @@
         },
         "ETH/USDT": {
             "grid_count": 12,
-            "investment_amount": 3000,
+            "investment_amount": 0.39,
             "price_range_percentage": 10,
             "min_profit_percentage": 0.6,
             "max_loss_percentage": 2.0,
@@ -113,4 +116,4 @@
             "maximum_leverage": 2.0
         }
     }
-} 
+}

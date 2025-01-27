@@ -5,12 +5,14 @@ from PIL import Image, ImageTk
 from datetime import datetime
 import logging
 from market_analyzer import EnhancedMarketAnalyzer
+from trading_bot import PionexTradingBot
 
 
 class TradingUI:
     def __init__(self):
         self.window = tk.Tk()
         self.window.title("交易系統")
+        self.trading_bot = None  # 初始化 trading_bot 為 None
 
         # 獲取屏幕尺寸
         screen_width = self.window.winfo_screenwidth()
@@ -240,41 +242,53 @@ class TradingUI:
 
     def start_trading(self):
         """開始交易"""
-        if not self.validate_inputs():
-            return
-
         try:
             # 獲取設置
             settings = self.get_settings()
-            if not settings:
+
+            # 添加日誌
+            self.add_log("正在啟動交易系統...", "system")
+
+            # 驗證API連接
+            if not hasattr(self, 'trading_bot'):
+                self.add_log("正在初始化交易機器人...", "system")
+                self.trading_bot = PionexTradingBot(
+                    self.api_key.get().strip(),
+                    self.api_secret.get().strip()
+                )
+
+            # 驗證投資金額
+            self.add_log("正在驗證投資金額...", "system")
+            validation_result = self.trading_bot.validate_investment_amount(
+                float(settings['investment_amount'])
+            )
+
+            if not validation_result['valid']:
+                self.add_log(f"錯誤: {validation_result['message']}", "error")
                 return
-
-            # 再次確認投資金額
-            confirm = messagebox.askyesno("確認",
-                                          f"確定要投資 {
-                                              settings['investment_amount']:.2f} USDT 開始交易嗎？\n"
-                                          f"槓桿倍數: {settings['leverage']}x\n"
-                                          f"風險等級: {settings['risk_level']}"
-                                          )
-
-            if not confirm:
-                return
-
-            # 禁用所有交易相關設置
-            self.disable_trading_settings()
 
             # 開始交易
-            self.update_status("交易系統啟動中...")
-            self.bot.start_trading(settings)
+            self.add_log("投資金額驗證通過，正在啟動交易策略...", "system")
+            success = self.trading_bot.start_trading(settings)
+
+            if success:
+                self.add_log("交易系統已成功啟動！", "success")
+                # 更新按鈕狀態
+                self.start_button.configure(state='disabled')
+                self.stop_button.configure(state='normal')
+                # 禁用設置
+                self.disable_trading_settings()
+            else:
+                self.add_log("交易系統啟動失敗", "error")
 
         except Exception as e:
-            self.update_status(f"啟動失敗: {str(e)}")
-            messagebox.showerror("錯誤", f"啟動失敗: {str(e)}")
-            self.enable_trading_settings()
+            error_message = f"啟動交易失敗: {str(e)}"
+            self.add_log(error_message, "error")
+            logging.error(error_message)
 
     def stop_trading(self):
         """停止交易"""
-        if hasattr(self, 'bot'):
+        if hasattr(self, 'trading_bot'):
             self.update_status("正在安全停止交易系統...")
             # 停止交易邏輯
             self.update_status("交易系統已停止")
@@ -408,9 +422,9 @@ class TradingUI:
                 raise ValueError("投資金額必須大於 0")
 
             # 驗證投資金額
-            if hasattr(self, 'bot'):
+            if hasattr(self, 'trading_bot'):
                 # 獲取帳戶狀態
-                status = self.bot.get_account_status()
+                status = self.trading_bot.get_account_status()
                 if status:
                     total_balance = float(status['total_balance'])
                     if investment_amount > total_balance:
@@ -422,7 +436,7 @@ class TradingUI:
                         self.investment_amount.insert(0, str(total_balance))
                         return False
 
-                validation = self.bot.validate_investment_amount(
+                validation = self.trading_bot.validate_investment_amount(
                     investment_amount)
                 if not validation['valid']:
                     messagebox.showerror("錯誤", validation['message'])
@@ -592,6 +606,15 @@ class TradingUI:
                              font=(self.fonts['body'][0], self.font_size),
                              background=self.current_theme['surface']
                              )
+
+        self.status_text.tag_configure(
+            "system", foreground=self.current_theme['text'])
+        self.status_text.tag_configure(
+            "error", foreground=self.current_theme['error'])
+        self.status_text.tag_configure(
+            "warning", foreground=self.current_theme['warning'])
+        self.status_text.tag_configure(
+            "success", foreground=self.current_theme['success'])
 
     def increase_font_size(self):
         """增加字體大小"""
@@ -1148,7 +1171,7 @@ class TradingUI:
 
         # 交易日誌區域
         log_frame = ttk.LabelFrame(
-            right_frame, text="交易日誌", style='Card.TLabelframe')
+            right_frame, text="系統日誌", style='Card.TLabelframe')
         log_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
         # 日誌工具欄
@@ -1201,18 +1224,6 @@ class TradingUI:
             pady=10
         )
         self.status_text.pack(fill="both", expand=True)
-
-        # 設置標籤和顏色
-        self.status_text.tag_configure(
-            "trade", foreground=self.current_theme['success'])
-        self.status_text.tag_configure(
-            "signal", foreground=self.current_theme['info'])
-        self.status_text.tag_configure(
-            "system", foreground=self.current_theme['text'])
-        self.status_text.tag_configure(
-            "error", foreground=self.current_theme['error'])
-        self.status_text.tag_configure(
-            "warning", foreground=self.current_theme['warning'])
 
         # 連接滾動條
         self.status_text.configure(
@@ -1397,7 +1408,6 @@ class TradingUI:
 
             try:
                 # 使用PionexTradingBot進行連接
-                from trading_bot import PionexTradingBot
                 self.trading_bot = PionexTradingBot(
                     api_key=self.api_key.get().strip(),
                     api_secret=self.api_secret.get().strip()

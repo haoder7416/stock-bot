@@ -27,13 +27,22 @@ class PionexTradingBot:
                 'Content-Type': 'application/json'
             }
 
+            # 初始化交易對列表
+            self.trading_pairs = []
+
             # 測試連接
             self.test_connection()
 
             # 初始化其他設置
             self.setup_logging()
             self.load_config()
+
+            # 初始化市場分析器
             self.market_analyzer = EnhancedMarketAnalyzer()
+            self.market_analyzer.set_trading_bot(self)  # 設置交易機器人實例
+
+            # 更新交易對列表
+            self.update_trading_pairs()
 
             # 記錄成功初始化
             logging.info("交易系統初始化成功")
@@ -756,11 +765,6 @@ class PionexTradingBot:
                 logging.warning("未獲取到任何交易對數據")
                 return
 
-            # 更新UI顯示
-            if hasattr(self, 'ui'):
-                self.ui.update_popular_pairs(pairs_data)
-                logging.info("已更新UI顯示")
-
             # 更新交易對列表
             self.trading_pairs = [pair['symbol'] for pair in pairs_data]
             logging.info(f"成功更新交易對列表: {self.trading_pairs}")
@@ -913,8 +917,14 @@ class PionexTradingBot:
         """驗證投資金額"""
         try:
             # 獲取帳戶餘額
-            balance = self.exchange.fetch_balance()
-            available_usdt = float(balance['free']['USDT'])
+            response = self.make_request('GET', '/api/v1/account/balances')
+
+            if not response.get('result', False):
+                raise Exception('獲取帳戶餘額失敗')
+
+            balances = response.get('data', {}).get('balances', [])
+            available_usdt = sum(float(b['free'])
+                                 for b in balances if b['coin'] == 'USDT')
 
             # 檢查可用餘額是否足夠
             if investment_amount > available_usdt:
@@ -1112,3 +1122,39 @@ class PionexTradingBot:
         except Exception as e:
             logging.error(f"趨勢信號檢查失敗: {str(e)}")
             return None
+
+    def start_trading(self, settings):
+        """開始交易"""
+        try:
+            logging.info("開始初始化交易設置...")
+
+            # 驗證交易對是否存在
+            if not self.trading_pairs:
+                logging.error("未找到可用的交易對")
+                return False
+
+            # 記錄交易設置
+            logging.info(f"當前交易設置: {settings}")
+            logging.info(f"可用交易對: {self.trading_pairs}")
+
+            # 初始化交易設置
+            self.initialize_trading()
+
+            # 更新配置
+            for pair in self.trading_pairs:
+                formatted_pair = pair.replace('_PERP', '').replace('_', '/')
+                if formatted_pair in self.config['grid_settings']:
+                    self.config['grid_settings'][formatted_pair]['investment_amount'] = settings['investment_amount']
+                    logging.info(f"已更新 {formatted_pair} 的投資金額為 {
+                                 settings['investment_amount']} USDT")
+
+            # 開始執行交易策略
+            logging.info("開始執行交易策略...")
+            self.execute_trading_strategy()
+
+            logging.info("交易系統啟動成功")
+            return True
+
+        except Exception as e:
+            logging.error(f"執行交易策略失敗: {str(e)}")
+            return False

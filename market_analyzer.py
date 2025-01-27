@@ -1,11 +1,77 @@
 import logging
 import time
+import pandas as pd
 
 
 class EnhancedMarketAnalyzer:
     def __init__(self):
         self.market_data = {}
         self.analysis_results = {}
+
+    def get_market_data(self, symbol, timeframe='1h', limit=100):
+        """獲取市場數據"""
+        try:
+            # 格式化交易對符號
+            formatted_symbol = symbol.replace('/', '_').upper()
+            if not formatted_symbol.endswith('_PERP'):
+                formatted_symbol = f"{formatted_symbol}_PERP"
+
+            # 轉換時間框架格式
+            timeframe_mapping = {
+                '1m': '1M',
+                '5m': '5M',
+                '15m': '15M',
+                '30m': '30M',
+                '1h': '60M',
+                '4h': '4H',
+                '1d': '1D'
+            }
+            formatted_timeframe = timeframe_mapping.get(timeframe, timeframe)
+
+            # 構建請求參數
+            params = {
+                'symbol': formatted_symbol,
+                'interval': formatted_timeframe,
+                'limit': str(limit)
+            }
+
+            logging.info(f"正在獲取 {formatted_symbol} 的市場數據，時間間隔: {
+                         formatted_timeframe}")
+
+            # 使用交易機器人的 API 請求數據
+            response = self.trading_bot.make_request(
+                'GET', '/api/v1/market/klines', params)
+
+            if not response.get('result', False):
+                raise Exception(f"獲取市場數據失敗: {response.get('message', '未知錯誤')}")
+
+            # 解析數據
+            klines = response.get('data', [])
+            if not klines:
+                logging.warning(f"未獲取到 {formatted_symbol} 的市場數據")
+                return None
+
+            # 轉換為 DataFrame
+            df = pd.DataFrame(klines, columns=[
+                'timestamp', 'open', 'high', 'low',
+                'close', 'volume', 'close_time', 'quote_volume',
+                'trades', 'taker_base', 'taker_quote'
+            ])
+
+            # 轉換數據類型
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = df[col].astype(float)
+
+            return df
+
+        except Exception as e:
+            logging.error(f"獲取市場數據失敗: {str(e)}")
+            return None
+
+    def set_trading_bot(self, trading_bot):
+        """設置交易機器人實例"""
+        self.trading_bot = trading_bot
 
     def comprehensive_analysis(self, symbol, timeframe='1h'):
         """綜合市場分析"""
@@ -122,7 +188,7 @@ class EnhancedMarketAnalyzer:
         """分析市場情緒"""
         try:
             sentiment = {
-                'fear_greed_index': 0,
+                'fear_greed_index': 50,  # 預設值
                 'trend_strength': 0,
                 'volume_trend': 0,
                 'volatility_level': 0,
@@ -130,29 +196,47 @@ class EnhancedMarketAnalyzer:
             }
 
             # 獲取市場數據
-            data = self.get_market_data(symbol, '4h', 100)
+            data = self.get_market_data(symbol, timeframe='4h', limit=100)
+            if data is None:
+                logging.warning(f"無法獲取 {symbol} 的市場數據")
+                return sentiment
 
             # 計算恐懼貪婪指數
             sentiment['fear_greed_index'] = self.calculate_fear_greed_index(
                 data)
 
             # 計算趨勢強度
-            sentiment['trend_strength'] = self.calculate_trend_strength(data)
+            close_prices = data['close']
+            ema20 = close_prices.ewm(span=20).mean()
+            ema50 = close_prices.ewm(span=50).mean()
+            sentiment['trend_strength'] = (
+                ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1]
 
             # 分析成交量趨勢
-            sentiment['volume_trend'] = self.analyze_volume_trend(data)
+            volume = data['volume']
+            volume_ma = volume.rolling(window=20).mean()
+            sentiment['volume_trend'] = (
+                volume.iloc[-1] - volume_ma.iloc[-1]) / volume_ma.iloc[-1]
 
-            # 計算波動率水平
-            sentiment['volatility_level'] = self.calculate_volatility(data)
+            # 計算波動率
+            returns = close_prices.pct_change()
+            sentiment['volatility_level'] = returns.std()
 
             # 計算市場動能
-            sentiment['market_momentum'] = self.calculate_momentum(data)
+            sentiment['market_momentum'] = (
+                close_prices.iloc[-1] / close_prices.iloc[-20] - 1)
 
             return sentiment
 
         except Exception as e:
             logging.error(f"市場情緒分析失敗: {str(e)}")
-            return None
+            return {
+                'fear_greed_index': 50,
+                'trend_strength': 0,
+                'volume_trend': 0,
+                'volatility_level': 0,
+                'market_momentum': 0
+            }
 
     def calculate_fear_greed_index(self, data):
         """計算恐懼貪婪指數"""

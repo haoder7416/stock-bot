@@ -1016,3 +1016,99 @@ class PionexTradingBot:
         except Exception as e:
             logging.error(f"下單失敗: {str(e)}")
             raise
+
+    def optimize_strategy_parameters(self, symbol):
+        """優化交易策略參數"""
+        try:
+            market_data = self.get_market_data(
+                symbol, timeframe='1h', limit=100)
+            if market_data is None:
+                return None
+
+            trend_strength = self.calculate_trend_strength(market_data)
+            volatility = market_data['close'].pct_change().std()
+            sentiment = self.market_analyzer.analyze_market_sentiment(symbol)
+
+            # 動態調整止盈止損
+            tp_ratio = 2.0  # 基礎止盈比例
+            sl_ratio = 1.0  # 基礎止損比例
+
+            # 根據趨勢強度調整
+            if trend_strength > 0.7:
+                tp_ratio *= 1.5
+                sl_ratio *= 0.8
+            elif trend_strength < 0.3:
+                tp_ratio *= 0.8
+                sl_ratio *= 1.2
+
+            # 根據波動率調整
+            volatility_factor = 1 + (volatility * 10)
+            tp_ratio *= volatility_factor
+            sl_ratio *= volatility_factor
+
+            # 計算倉位大小
+            base_position = self.config['position_management']['position_size_limit']
+            position_size = base_position * \
+                (1 + trend_strength - 0.5) * (1 / (1 + volatility * 5))
+
+            return {
+                'take_profit_ratio': tp_ratio,
+                'stop_loss_ratio': sl_ratio,
+                'position_size': min(position_size, self.config['risk_management']['position_size_limit']),
+                'trend_strength': trend_strength,
+                'volatility': volatility
+            }
+
+        except Exception as e:
+            logging.error(f"策略參數優化失敗: {str(e)}")
+            return None
+
+    def update_trailing_stop(self, symbol, current_price, position):
+        """更新追蹤止損"""
+        try:
+            if not position or 'stop_loss' not in position:
+                return None
+
+            trailing_percentage = self.config['risk_management']['trailing_stop_percentage'] / 100
+            original_stop = position['stop_loss']
+
+            if position['side'] == 'buy':
+                new_stop = current_price * (1 - trailing_percentage)
+                return new_stop if new_stop > original_stop else original_stop
+            else:
+                new_stop = current_price * (1 + trailing_percentage)
+                return new_stop if new_stop < original_stop else original_stop
+
+        except Exception as e:
+            logging.error(f"更新追蹤止損失敗: {str(e)}")
+            return None
+
+    def check_trend_signals(self, symbol):
+        """檢查趨勢信號"""
+        try:
+            data = self.get_market_data(symbol, timeframe='1h', limit=50)
+            if data is None:
+                return None
+
+            # 計算技術指標
+            ema_short = data['close'].ewm(span=10).mean()
+            ema_long = data['close'].ewm(span=30).mean()
+
+            # MACD
+            macd = data['close'].ewm(span=12).mean(
+            ) - data['close'].ewm(span=26).mean()
+            signal = macd.ewm(span=9).mean()
+
+            # 趨勢信號
+            signals = {
+                'trend_direction': 'up' if ema_short.iloc[-1] > ema_long.iloc[-1] else 'down',
+                'trend_strength': abs(ema_short.iloc[-1] - ema_long.iloc[-1]) / ema_long.iloc[-1],
+                'macd_signal': 'buy' if macd.iloc[-1] > signal.iloc[-1] else 'sell',
+                'momentum': (data['close'].iloc[-1] / data['close'].iloc[-10] - 1) * 100
+            }
+
+            return signals
+
+        except Exception as e:
+            logging.error(f"趨勢信號檢查失敗: {str(e)}")
+            return None

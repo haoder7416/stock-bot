@@ -22,12 +22,13 @@
         }
     },
     "risk_management": {
-        "max_loss_percentage": 8,
-        "trailing_stop_percentage": 2,
-        "daily_loss_limit": 5,
-        "position_size_limit": 0.1,
-        "max_open_positions": 5,
-        "volatility_adjustment": true
+        "max_loss_percentage": 5,
+        "trailing_stop_percentage": 1.5,
+        "daily_loss_limit": 4,
+        "position_size_limit": 0.15,
+        "max_open_positions": 6,
+        "volatility_adjustment": true,
+        "dynamic_risk_adjustment": true
     },
     "indicators": {
         "rsi": {
@@ -57,22 +58,26 @@
     },
     "advanced_settings": {
         "position_management": {
-            "max_positions_per_symbol": 3,
+            "max_positions_per_symbol": 4,
             "position_scaling": true,
-            "scale_in_threshold": 0.02,
-            "scale_out_threshold": 0.015
+            "scale_in_threshold": 0.015,
+            "scale_out_threshold": 0.02,
+            "dynamic_position_sizing": true
         },
         "risk_control": {
-            "max_daily_trades": 10,
-            "max_daily_drawdown": 0.05,
+            "max_daily_trades": 12,
+            "max_daily_drawdown": 0.04,
             "volatility_adjustment": true,
-            "dynamic_stop_loss": true
+            "dynamic_stop_loss": true,
+            "profit_protection": true
         },
         "market_analysis": {
-            "sentiment_weight": 0.3,
-            "technical_weight": 0.4,
+            "sentiment_weight": 0.35,
+            "technical_weight": 0.35,
             "trend_weight": 0.3,
-            "minimum_confirmation_signals": 3
+            "minimum_confirmation_signals": 2,
+            "trend_following_enabled": true,
+            "momentum_threshold": 0.02
         }
     },
     "optimization": {

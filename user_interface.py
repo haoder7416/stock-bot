@@ -351,26 +351,31 @@ class TradingUI:
                 try:
                     with open('user_settings.json', 'r') as f:
                         old_settings = json.load(f)
+                        # 保留原有的API金鑰（如果存在）
+                        if 'api_key' in old_settings:
+                            settings['api_key'] = old_settings['api_key']
+                        if 'api_secret' in old_settings:
+                            settings['api_secret'] = old_settings['api_secret']
                 except FileNotFoundError:
-                    pass
+                    # 如果檔案不存在，移除API金鑰相關資訊
+                    settings.pop('api_key', None)
+                    settings.pop('api_secret', None)
 
-                # 保存新設置
+                # 保存新設置（不包含API金鑰）
+                settings_to_save = {k: v for k, v in settings.items() if k not in [
+                    'api_key', 'api_secret']}
                 with open('user_settings.json', 'w') as f:
-                    json.dump(settings, f, indent=4)
+                    json.dump(settings_to_save, f, indent=4)
 
                 # 記錄變更到日誌
                 self.update_status("設置已保存，更新內容：")
 
-                # 比較並記錄變更
-                for key, new_value in settings.items():
+                # 比較並記錄變更（排除API金鑰）
+                for key, new_value in settings_to_save.items():
                     old_value = old_settings.get(key)
                     if old_value != new_value:
-                        if key in ['api_key', 'api_secret']:
-                            # 敏感資訊不顯示具體內容
-                            self.update_status(f"- {key}: 已更新")
-                        else:
-                            self.update_status(
-                                f"- {key}: {old_value} → {new_value}")
+                        self.update_status(
+                            f"- {key}: {old_value} → {new_value}")
 
                 messagebox.showinfo("成功", "設置已保存")
 

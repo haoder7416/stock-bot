@@ -1,0 +1,8 @@
+{
+    "investment_amount": 2.529217567744176,
+    "leverage": 10,
+    "risk_level": "\u4e2d\u7b49",
+    "grid_trading": true,
+    "smart_entry": true,
+    "auto_compound": true
+}

@@ -62,8 +62,15 @@ class TradingUI:
 
         self.current_theme = self.dark_theme
         self.style = ttk.Style()
+
+        # 先創建所有介面元素
         self.create_widgets()
+
+        # 更新樣式
         self.update_styles()
+
+        # 最後禁用所有交易相關設置
+        self.disable_trading_settings()
 
     def init_fonts(self):
         """初始化字體設置"""
@@ -262,58 +269,74 @@ class TradingUI:
     def disable_trading_settings(self):
         """禁用所有交易相關設置"""
         # 禁用投資金額設置
-        self.investment_amount.configure(state='disabled')
+        if hasattr(self, 'investment_amount'):
+            self.investment_amount.configure(state='disabled')
+            self.investment_amount_value.configure(state='disabled')
 
         # 禁用槓桿設置
-        self.leverage.configure(state='disabled')
-        for button in self.leverage_buttons.winfo_children():
-            button.configure(state='disabled')
+        if hasattr(self, 'leverage'):
+            self.leverage.configure(state='disabled')
+            self.leverage_value.configure(state='disabled')
+            for button in self.leverage_buttons.winfo_children():
+                button.configure(state='disabled')
 
         # 禁用風險等級設置
-        for widget in self.risk_frame.winfo_children():
-            if isinstance(widget, ttk.Radiobutton):
-                widget.configure(state='disabled')
+        if hasattr(self, 'risk_frame'):
+            for widget in self.risk_frame.winfo_children():
+                if isinstance(widget, ttk.Radiobutton):
+                    widget.configure(state='disabled')
 
         # 禁用策略設置
-        for widget in self.strategy_frame.winfo_children():
-            if isinstance(widget, ttk.Checkbutton):
-                widget.configure(state='disabled')
+        if hasattr(self, 'strategy_frame'):
+            for widget in self.strategy_frame.winfo_children():
+                if isinstance(widget, ttk.Checkbutton):
+                    widget.configure(state='disabled')
 
         # 禁用保存設置按鈕
-        self.save_button.configure(state='disabled')
+        if hasattr(self, 'save_button'):
+            self.save_button.configure(state='disabled')
 
         # 更新按鈕狀態
-        self.connect_button.configure(state='disabled')
-        self.start_button.configure(state='disabled')
-        self.stop_button.configure(state='normal')
+        if hasattr(self, 'start_button'):
+            self.start_button.configure(state='disabled')
+        if hasattr(self, 'stop_button'):
+            self.stop_button.configure(state='disabled')
 
     def enable_trading_settings(self):
         """啟用所有交易相關設置"""
         # 啟用投資金額設置
-        self.investment_amount.configure(state='normal')
+        if hasattr(self, 'investment_amount'):
+            self.investment_amount.configure(state='normal')
+            self.investment_amount_value.configure(state='normal')
 
         # 啟用槓桿設置
-        self.leverage.configure(state='normal')
-        for button in self.leverage_buttons.winfo_children():
-            button.configure(state='normal')
+        if hasattr(self, 'leverage'):
+            self.leverage.configure(state='normal')
+            self.leverage_value.configure(state='normal')
+            for button in self.leverage_buttons.winfo_children():
+                button.configure(state='normal')
 
         # 啟用風險等級設置
-        for widget in self.risk_frame.winfo_children():
-            if isinstance(widget, ttk.Radiobutton):
-                widget.configure(state='normal')
+        if hasattr(self, 'risk_frame'):
+            for widget in self.risk_frame.winfo_children():
+                if isinstance(widget, ttk.Radiobutton):
+                    widget.configure(state='normal')
 
         # 啟用策略設置
-        for widget in self.strategy_frame.winfo_children():
-            if isinstance(widget, ttk.Checkbutton):
-                widget.configure(state='normal')
+        if hasattr(self, 'strategy_frame'):
+            for widget in self.strategy_frame.winfo_children():
+                if isinstance(widget, ttk.Checkbutton):
+                    widget.configure(state='normal')
 
         # 啟用保存設置按鈕
-        self.save_button.configure(state='normal')
+        if hasattr(self, 'save_button'):
+            self.save_button.configure(state='normal')
 
         # 更新按鈕狀態
-        self.connect_button.configure(state='normal')
-        self.start_button.configure(state='normal')
-        self.stop_button.configure(state='disabled')
+        if hasattr(self, 'start_button'):
+            self.start_button.configure(state='normal')
+        if hasattr(self, 'stop_button'):
+            self.stop_button.configure(state='disabled')
 
     def save_settings(self):
         """保存設置"""
@@ -723,12 +746,12 @@ class TradingUI:
         self.leverage_value.pack(side="left", padx=5)
 
         # 快速選擇按鈕
-        leverage_buttons = ttk.Frame(inv_frame)
-        leverage_buttons.pack(fill="x", pady=5)
+        self.leverage_buttons = ttk.Frame(inv_frame)  # 保存為類的屬性
+        self.leverage_buttons.pack(fill="x", pady=5)
 
         for value in [1, 3, 5, 10, 20]:
             ttk.Button(
-                leverage_buttons,
+                self.leverage_buttons,
                 text=f"{value}x",
                 style='Leverage.TButton',
                 command=lambda v=value: self.set_leverage(v)
@@ -1235,6 +1258,7 @@ class TradingUI:
             self.update_api_status("未連接", "error")
             messagebox.showerror("錯誤", "請輸入 API Key 和 Secret")
             self.reset_account_info()  # 重置帳戶資訊
+            self.disable_trading_settings()  # 確保交易設置被禁用
             return
 
         try:
@@ -1251,7 +1275,6 @@ class TradingUI:
 
             # 連接成功
             self.update_api_status("已連接", "success")
-            self.start_button.configure(state='normal')
 
             # 開始更新市場數據
             self.bot.start_market_data_update()
@@ -1262,12 +1285,18 @@ class TradingUI:
             # 設置定時更新
             self.start_status_updates()
 
+            # 啟用所有交易相關設置
+            self.enable_trading_settings()
+
             # 顯示成功消息
             messagebox.showinfo("成功", "交易所連接成功！")
 
         except Exception as e:
             # 連接失敗時重置所有帳戶資訊
             self.reset_account_info()
+
+            # 確保所有交易相關設置被禁用
+            self.disable_trading_settings()
 
             # 處理錯誤訊息
             error_msg = str(e)
@@ -1278,7 +1307,6 @@ class TradingUI:
 
             self.update_api_status("連接失敗", "error")
             self.update_status(f"API 測試失敗: {error_msg}")
-            self.start_button.configure(state='disabled')
             messagebox.showerror("錯誤", f"連線失敗: {error_msg}")
 
         finally:

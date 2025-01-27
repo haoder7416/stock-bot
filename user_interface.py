@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, font
 import json
 from PIL import Image, ImageTk
+from datetime import datetime
 
 
 class TradingUI:
@@ -1053,50 +1054,96 @@ class TradingUI:
         )
         status_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # 交易狀態指示器
-        status_indicator_frame = ttk.Frame(status_frame)
-        status_indicator_frame.pack(fill="x", padx=10, pady=5)
+        # 建立左右分割面板
+        paned = ttk.PanedWindow(status_frame, orient="horizontal")
+        paned.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # 左側 - 連接狀態
-        left_frame = ttk.Frame(status_indicator_frame)
-        left_frame.pack(side="left", fill="x")
+        # 左側面板 - 交易狀態和數據
+        left_frame = ttk.Frame(paned)
+        paned.add(left_frame, weight=1)
+
+        # 交易狀態指示器
+        status_indicator_frame = ttk.Frame(left_frame)
+        status_indicator_frame.pack(fill="x", padx=5, pady=5)
 
         self.status_indicator = ttk.Label(
-            left_frame,
+            status_indicator_frame,
             text="⚪ 未連接",
             style='StatusError.TLabel'
         )
         self.status_indicator.pack(side="left", padx=(0, 15))
 
-        # 右側 - 即時價格
-        right_frame = ttk.Frame(status_indicator_frame)
-        right_frame.pack(side="right", fill="x")
-
         self.price_label = ttk.Label(
-            right_frame,
+            status_indicator_frame,
             text="BTC: $ --,---",
             style='StatusInfo.TLabel'
         )
         self.price_label.pack(side="right")
 
-        # 交易數據區域
-        metrics_frame = ttk.Frame(status_frame)
-        metrics_frame.pack(fill="x", padx=10, pady=5)
+        # 交易策略分析結果
+        strategy_frame = ttk.LabelFrame(
+            left_frame,
+            text="策略分析",
+            style='Card.TLabelframe'
+        )
+        strategy_frame.pack(fill="x", padx=5, pady=5)
 
-        # 狀態日誌區域
-        log_frame = ttk.Frame(status_frame)
-        log_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # 市場趨勢
+        trend_frame = ttk.Frame(strategy_frame)
+        trend_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(trend_frame, text="市場趨勢:",
+                  style='FieldLabel.TLabel').pack(side="left")
+        self.trend_label = ttk.Label(
+            trend_frame, text="--", style='ValueInfo.TLabel')
+        self.trend_label.pack(side="right")
+
+        # 波動性
+        volatility_frame = ttk.Frame(strategy_frame)
+        volatility_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(volatility_frame, text="波動性:",
+                  style='FieldLabel.TLabel').pack(side="left")
+        self.volatility_label = ttk.Label(
+            volatility_frame, text="--", style='ValueInfo.TLabel')
+        self.volatility_label.pack(side="right")
+
+        # 交易信號
+        signal_frame = ttk.Frame(strategy_frame)
+        signal_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(signal_frame, text="交易信號:",
+                  style='FieldLabel.TLabel').pack(side="left")
+        self.signal_label = ttk.Label(
+            signal_frame, text="--", style='ValueInfo.TLabel')
+        self.signal_label.pack(side="right")
+
+        # 右側面板 - 日誌和歷史記錄
+        right_frame = ttk.Frame(paned)
+        paned.add(right_frame, weight=2)
+
+        # 交易日誌區域
+        log_frame = ttk.LabelFrame(
+            right_frame, text="交易日誌", style='Card.TLabelframe')
+        log_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
         # 日誌工具欄
         toolbar = ttk.Frame(log_frame)
         toolbar.pack(fill="x", pady=(0, 5))
 
-        ttk.Label(
-            toolbar,
-            text="系統日誌",
-            style='FieldLabel.TLabel'
-        ).pack(side="left")
+        # 日誌過濾選項
+        self.log_filter = tk.StringVar(value="全部")
+        filter_frame = ttk.Frame(toolbar)
+        filter_frame.pack(side="left")
 
+        for filter_type in ["全部", "交易", "信號", "系統"]:
+            ttk.Radiobutton(
+                filter_frame,
+                text=filter_type,
+                value=filter_type,
+                variable=self.log_filter,
+                command=self.filter_logs,
+                style='Small.TRadiobutton'
+            ).pack(side="left", padx=5)
+
+        # 清除按鈕
         ttk.Button(
             toolbar,
             text="清除日誌",
@@ -1108,13 +1155,19 @@ class TradingUI:
         log_container = ttk.Frame(log_frame)
         log_container.pack(fill="both", expand=True)
 
+        # 垂直滾動條
         scrollbar = ttk.Scrollbar(log_container)
         scrollbar.pack(side="right", fill="y")
 
+        # 水平滾動條
+        h_scrollbar = ttk.Scrollbar(log_container, orient="horizontal")
+        h_scrollbar.pack(side="bottom", fill="x")
+
+        # 日誌文本區域
         self.status_text = tk.Text(
             log_container,
-            height=8,
-            wrap='word',
+            height=12,
+            wrap="none",  # 不自動換行
             font=self.fonts['mono'],
             relief="flat",
             padx=10,
@@ -1122,379 +1175,84 @@ class TradingUI:
         )
         self.status_text.pack(fill="both", expand=True)
 
+        # 設置標籤和顏色
+        self.status_text.tag_configure(
+            "trade", foreground=self.current_theme['success'])
+        self.status_text.tag_configure(
+            "signal", foreground=self.current_theme['info'])
+        self.status_text.tag_configure(
+            "system", foreground=self.current_theme['text'])
+        self.status_text.tag_configure(
+            "error", foreground=self.current_theme['error'])
+        self.status_text.tag_configure(
+            "warning", foreground=self.current_theme['warning'])
+
         # 連接滾動條
-        self.status_text.configure(yscrollcommand=scrollbar.set)
+        self.status_text.configure(
+            yscrollcommand=scrollbar.set,
+            xscrollcommand=h_scrollbar.set
+        )
         scrollbar.configure(command=self.status_text.yview)
+        h_scrollbar.configure(command=self.status_text.xview)
 
         # 控制按鈕區域
         self.create_control_buttons(status_frame)
 
-    def clear_log(self):
-        """清除日誌內容"""
-        self.status_text.delete(1.0, tk.END)
+    def filter_logs(self):
+        """根據選擇的過濾條件顯示日誌"""
+        filter_type = self.log_filter.get()
+        self.status_text.tag_remove("hidden", "1.0", tk.END)
 
-    def create_control_buttons(self, parent):
-        """創建控制按鈕區域"""
-        control_frame = ttk.Frame(parent)
-        control_frame.pack(fill="x", padx=10, pady=10)
+        if filter_type != "全部":
+            # 隱藏不符合過濾條件的行
+            start = "1.0"
+            while True:
+                # 找到下一個標籤位置
+                tag_range = self.status_text.tag_nextrange(
+                    filter_type.lower(), start)
+                if not tag_range:
+                    break
+                # 隱藏這一行
+                line_start = self.status_text.index(
+                    f"{tag_range[0]} linestart")
+                line_end = self.status_text.index(
+                    f"{tag_range[0]} lineend + 1c")
+                self.status_text.tag_add("hidden", line_start, line_end)
+                start = line_end
 
-        # 左側交易控制
-        left_frame = ttk.Frame(control_frame)
-        left_frame.pack(side="left", fill="x", expand=True)
+    def add_log(self, message, log_type="system"):
+        """添加日誌訊息"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}\n"
 
-        self.start_button = ttk.Button(
-            left_frame,
-            text="開始交易",
-            style='Primary.TButton',
-            command=self.start_trading,
-            state='disabled'  # 初始狀態為禁用
-        )
-        self.start_button.pack(side="left", padx=5)
+        self.status_text.insert(tk.END, log_entry, log_type)
+        self.status_text.see(tk.END)  # 自動滾動到最新的日誌
 
-        self.stop_button = ttk.Button(
-            left_frame,
-            text="停止交易",
-            style='Danger.TButton',
-            command=self.stop_trading,
-            state='disabled'
-        )
-        self.stop_button.pack(side="left", padx=5)
+        # 如果當前有過濾，則根據過濾條件顯示/隱藏
+        if self.log_filter.get() != "全部":
+            self.filter_logs()
 
-        # 右側設置保存
-        self.save_button = ttk.Button(
-            control_frame,
-            text="保存設置",
-            style='Success.TButton',
-            command=self.save_settings
-        )
-        self.save_button.pack(side="right", padx=5)
-
-    def disable_inputs(self):
-        """禁用所有輸入欄位"""
-        self.api_key.configure(state='disabled')
-        self.api_secret.configure(state='disabled')
-        self.investment_amount.configure(state='disabled')
-
-        # 禁用所有複選框
-        for widget in self.window.winfo_children():
-            if isinstance(widget, ttk.Checkbutton):
-                widget.configure(state='disabled')
-
-    def enable_inputs(self):
-        """啟用所有輸入欄位"""
-        self.api_key.configure(state='normal')
-        self.api_secret.configure(state='normal')
-        self.investment_amount.configure(state='normal')
-
-        # 啟用所有複選框
-        for widget in self.window.winfo_children():
-            if isinstance(widget, ttk.Checkbutton):
-                widget.configure(state='normal')
-
-    def toggle_secret_visibility(self):
-        """切換 API Secret 的顯示/隱藏"""
-        if self.show_secret.get():
-            self.api_secret.configure(show="")
-        else:
-            self.api_secret.configure(show="•")
-
-    def on_entry_focus_in(self, event, placeholder):
-        """當輸入框獲得焦點時"""
-        widget = event.widget
-        if widget.get() == placeholder:
-            widget.delete(0, "end")
-            widget.configure(foreground=self.current_theme['text'])
-
-    def on_entry_focus_out(self, event, placeholder):
-        """當輸入框失去焦點時"""
-        widget = event.widget
-        if not widget.get():
-            widget.insert(0, placeholder)
-            widget.configure(foreground=self.current_theme['text_muted'])
-
-    def on_api_input_change(self, event=None):
-        """當 API 輸入改變時"""
-        # 取消之前的定時器（如果存在）
-        if hasattr(self, '_api_test_timer'):
-            self.window.after_cancel(self._api_test_timer)
-
-        # 清除之前的連接狀態
-        self.update_api_status("未連接", "error")
-        self.start_button.configure(state='disabled')
-
-    def reset_account_info(self):
-        """重置所有帳戶資訊顯示為初始值"""
-        # 重置資產概覽
-        self.total_balance_label.configure(text="--,---")
-        self.available_balance_label.configure(text="--,---")
-        self.capital_usage_label.configure(text="---%")
-
-        # 重置收益數據
-        self.total_pnl_label.configure(text="+0.00%", style="ValueInfo.TLabel")
-        self.daily_pnl_label.configure(text="+0.00%", style="ValueInfo.TLabel")
-        self.win_rate_label.configure(text="0.00%")
-
-        # 重置投資金額滑動條
-        if hasattr(self, 'investment_amount'):
-            self.investment_amount.configure(to=0)
-            self.investment_amount.set(0)
-            self.update_investment_amount(0)
-
-        # 清空持倉詳情
-        for widget in self.position_container.winfo_children():
-            widget.destroy()
-
-        # 清空交易歷史
-        if hasattr(self, 'trade_history_text'):
-            self.trade_history_text.delete(1.0, tk.END)
-
-    def test_api_connection(self):
-        """測試 API 連線"""
-        api_key = self.api_key.get()
-        api_secret = self.api_secret.get()
-
-        # 檢查是否有輸入
-        if not api_key or not api_secret or api_key == "請輸入您的 API Key":
-            self.update_api_status("未連接", "error")
-            messagebox.showerror("錯誤", "請輸入 API Key 和 Secret")
-            self.reset_account_info()  # 重置帳戶資訊
-            self.disable_trading_settings()  # 確保交易設置被禁用
+    def update_strategy_analysis(self, analysis):
+        """更新策略分析結果"""
+        if not analysis:
             return
 
-        try:
-            # 更新狀態為連線中
-            self.update_api_status("連線中", "warning")
-            self.connect_button.configure(state='disabled')
+        # 更新市場趨勢
+        trend = analysis.get('trend', {})
+        trend_text = f"{trend.get('direction', '--')
+                        } ({trend.get('strength', 0)}%)"
+        self.trend_label.configure(text=trend_text)
 
-            # 初始化交易機器人
-            from trading_bot import PionexTradingBot
-            self.bot = PionexTradingBot(
-                api_key=api_key,
-                api_secret=api_secret
-            )
+        # 更新波動性
+        volatility = analysis.get('volatility', {})
+        volatility_text = f"{volatility.get(
+            'level', '--')} ({volatility.get('value', 0)}%)"
+        self.volatility_label.configure(text=volatility_text)
 
-            # 連接成功
-            self.update_api_status("已連接", "success")
-
-            # 開始更新市場數據
-            self.bot.start_market_data_update()
-
-            # 更新帳戶狀態
-            self.update_account_status()
-
-            # 設置定時更新
-            self.start_status_updates()
-
-            # 啟用所有交易相關設置
-            self.enable_trading_settings()
-
-            # 顯示成功消息
-            messagebox.showinfo("成功", "交易所連接成功！")
-
-        except Exception as e:
-            # 連接失敗時重置所有帳戶資訊
-            self.reset_account_info()
-
-            # 確保所有交易相關設置被禁用
-            self.disable_trading_settings()
-
-            # 處理錯誤訊息
-            error_msg = str(e)
-            if "API 驗證失敗" in error_msg:
-                error_msg = "API Key 或 Secret 無效"
-            elif "網絡連接失敗" in error_msg:
-                error_msg = "無法連接到交易所，請檢查網絡連接"
-
-            self.update_api_status("連接失敗", "error")
-            self.update_status(f"API 測試失敗: {error_msg}")
-            messagebox.showerror("錯誤", f"連線失敗: {error_msg}")
-
-        finally:
-            self.connect_button.configure(state='normal')
-
-    def update_api_status(self, status, status_type):
-        """更新 API 狀態顯示"""
-        # 設置狀態指示燈顏色
-        indicator = {
-            'success': '🟢',
-            'error': '🔴',
-            'warning': '🟡'
-        }.get(status_type.lower(), '⚪')
-
-        self.api_status_label.configure(
-            text=f"{indicator} {status}",
-            style=f'Status{status_type.capitalize()}.TLabel'
-        )
-
-    def update_trading_metrics(self, data):
-        """更新交易數據"""
-        # 更新總資產
-        self.total_assets_label.configure(
-            text=f"$ {data.get('total_assets', '--,---')}",
-            foreground=self.current_theme['text']
-        )
-
-        # 更新當前收益
-        profit = data.get('current_profit', 0)
-        profit_color = self.current_theme['success'] if profit >= 0 else self.current_theme['error']
-        self.current_profit_label.configure(
-            text=f"{'+' if profit >= 0 else ''}{profit:.2f}%",
-            foreground=profit_color
-        )
-
-        # 更新持倉水位
-        self.position_level_label.configure(
-            text=f"{data.get('position_level', 0)}%"
-        )
-
-        # 更新交易量
-        self.trading_volume_label.configure(
-            text=f"{data.get('trading_volume', 0.00):.2f} BTC"
-        )
-
-        # 更新價格
-        if 'current_price' in data:
-            self.price_label.configure(
-                text=f"BTC: $ {data['current_price']:,.2f}"
-            )
-
-    def update_status_indicator(self, is_connected):
-        """更新連接狀態指示器"""
-        if is_connected:
-            self.status_indicator.configure(
-                text="⬤ 已連接",
-                style='StatusSuccess.TLabel'
-            )
-        else:
-            self.status_indicator.configure(
-                text="⬤ 未連接",
-                style='StatusError.TLabel'
-            )
-
-    def update_risk_description(self):
-        """更新風險描述"""
-        selected_risk = self.risk_level.get()
-        if selected_risk in self.risk_descriptions:
-            self.risk_description_label.configure(
-                text=self.risk_descriptions[selected_risk]
-            )
-
-    def update_risk_level(self, event):
-        """當風險等級改變時更新說明"""
-        selected_risk = self.risk_level.get()
-        self.risk_description_label.configure(
-            text=self.risk_descriptions[selected_risk]
-        )
-
-    def update_risk_descriptions(self, risk_levels):
-        """更新風險描述字典"""
-        self.risk_descriptions = {
-            level: self.risk_descriptions[level] for level in risk_levels}
-        self.risk_level.trace('w', self.update_risk_description)
-
-    def start_status_updates(self):
-        """開始定時更新狀態"""
-        def update():
-            if hasattr(self, 'bot'):
-                self.update_account_status()
-                # 每10秒更新一次
-                self.window.after(10000, update)
-
-        update()
-
-    def update_account_status(self):
-        """更新帳戶狀態"""
-        if not hasattr(self, 'bot'):
-            return
-
-        status = self.bot.get_account_status()
-        if not status:
-            return
-
-        # 更新資產概覽
-        total_balance = float(status['total_balance'])
-        self.total_balance_label.configure(
-            text=f"{total_balance:,.2f}"
-        )
-
-        # 更新投資金額滑動條的最大值
-        if hasattr(self, 'investment_amount'):
-            self.investment_amount.configure(to=total_balance)
-            # 如果當前值大於新的最大值，則調整當前值
-            current_value = float(self.investment_amount.get())
-            if current_value > total_balance:
-                self.investment_amount.set(total_balance)
-                self.update_investment_amount(total_balance)
-
-        # 更新可用資金
-        self.available_balance_label.configure(
-            text=f"{status['available_balance']:,.2f}"
-        )
-
-        # 更新資金使用率
-        self.capital_usage_label.configure(
-            text=f"{status['capital_usage']:.1f}%"
-        )
-
-        # 更新收益數據
-        total_pnl = status.get('total_pnl', 0)
-        daily_pnl = status.get('daily_pnl', 0)
-
-        self.total_pnl_label.configure(
-            text=f"{'+' if total_pnl >= 0 else ''}{total_pnl:.2f}%",
-            style=f"Value{'Success' if total_pnl >= 0 else 'Error'}.TLabel"
-        )
-
-        self.daily_pnl_label.configure(
-            text=f"{'+' if daily_pnl >= 0 else ''}{daily_pnl:.2f}%",
-            style=f"Value{'Success' if daily_pnl >= 0 else 'Error'}.TLabel"
-        )
-
-        # 更新交易統計
-        self.win_rate_label.configure(
-            text=f"{status.get('win_rate', 0):.1f}%"
-        )
-
-        # 清空並更新持倉詳情
-        for widget in self.position_container.winfo_children():
-            widget.destroy()
-
-        # 更新持倉信息
-        for i, (symbol, details) in enumerate(status['position_details'].items()):
-            pnl_color = 'Success' if details['unrealized_pnl'] >= 0 else 'Error'
-            pnl_percentage = (
-                details['unrealized_pnl'] / (details['entry_price'] * details['size'])) * 100
-
-            values = [
-                symbol,
-                f"{details['size']:.4f}",
-                f"{details['entry_price']:.2f}",
-                f"{details.get('current_price', 0):.2f}",
-                f"{details['unrealized_pnl']:+.2f}",
-                f"{pnl_percentage:+.2f}%",
-                f"{details['leverage']}x"
-            ]
-
-            for j, value in enumerate(values):
-                ttk.Label(
-                    self.position_container,
-                    text=value,
-                    style=f'Value{pnl_color if j in [4, 5] else ""}.TLabel'
-                ).grid(row=i, column=j, padx=5, pady=2)
-
-        # 更新交易歷史
-        if 'trade_history' in status:
-            self.trade_history_text.delete(1.0, tk.END)
-            for trade in status['trade_history']:
-                time_str = trade['time'].strftime('%H:%M:%S')
-                pnl_str = f"{trade['pnl']:+.2f}"
-                self.trade_history_text.insert(tk.END,
-                                               f"{time_str} | {trade['symbol']} | {
-                                                   trade['side']} | "
-                                               f"價格: {trade['price']:.2f} | 數量: {
-                                                   trade['amount']:.4f} | "
-                                               f"盈虧: {pnl_str} USDT\n"
-                                               )
+        # 更新交易信號
+        signals = analysis.get('signals', [])
+        signal_text = ', '.join(signals) if signals else '--'
+        self.signal_label.configure(text=signal_text)
 
     def create_target_section(self, parent):
         """創建盈虧目標設置區域"""
@@ -1553,9 +1311,6 @@ class TradingUI:
             style='Card.TLabelframe'
         )
         chart_frame.pack(fill="x", padx=10, pady=5)
-
-        # 使用 matplotlib 繪製圖表
-        # 可以顯示盈虧曲線、交易量等數據
 
     def create_notification_section(self, parent):
         """創建通知設置區域"""

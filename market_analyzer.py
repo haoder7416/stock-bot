@@ -34,9 +34,13 @@ class EnhancedMarketAnalyzer:
             if not trading_bot:
                 raise ValueError("交易機器人實例未初始化")
 
-            # 使用Pionex API獲取市場數據
+            # 使用正確的API端點獲取市場數據
+            params = {
+                'type': 'PERP'  # 指定獲取合約交易對
+            }
             response = trading_bot.make_request(
-                'GET', '/api/v1/market/tickers')
+                'GET', '/api/v1/market/tickers', params=params)
+            logging.debug(f"Tickers API 響應: {response}")
 
             # 檢查響應格式
             if not isinstance(response, dict):
@@ -56,37 +60,53 @@ class EnhancedMarketAnalyzer:
             for ticker in tickers:
                 try:
                     symbol = ticker.get('symbol', '')
-                    if not symbol or 'USDT' not in symbol.upper():
+                    if not symbol or not symbol.endswith('_USDT_PERP'):
                         continue
 
-                    volume = float(ticker.get('amount', 0))
+                    # 使用volume作為交易量（24小時交易量）
+                    volume = float(ticker.get('volume', 0))
+                    amount = float(ticker.get('amount', 0))  # 24小時交易額
                     if volume <= 0:
                         continue
 
-                    usdt_pairs.append((symbol, volume))
+                    # 處理價格數據
+                    close_price = float(ticker.get('close', 0))
+                    open_price = float(ticker.get('open', 0))
+                    high_price = float(ticker.get('high', 0))
+                    low_price = float(ticker.get('low', 0))
+
+                    # 計算價格變化百分比
+                    price_change = 0
+                    if open_price > 0:
+                        price_change = (
+                            (close_price - open_price) / open_price) * 100
+
+                    # 構建交易對數據
+                    pair_data = {
+                        'symbol': symbol,
+                        'price': close_price,
+                        'volume': amount,  # 使用交易額作為交易量
+                        'price_change': price_change,
+                        'high': high_price,
+                        'low': low_price,
+                        'volume_coin': volume  # 原始幣種交易量
+                    }
+                    usdt_pairs.append((symbol, amount, pair_data))
+                    logging.debug(f"處理交易對數據: {pair_data}")
+
                 except Exception as e:
                     logging.warning(f"處理交易對{symbol}時出錯: {str(e)}")
                     continue
 
-            # 按交易量排序並取前N個
+            # 按交易額排序並取前N個
             usdt_pairs.sort(key=lambda x: x[1], reverse=True)
-            top_pairs = usdt_pairs[:limit]
+            top_pairs = [pair[2] for pair in usdt_pairs[:limit]]
 
-            # 獲取詳細數據
-            pairs_data = []
-            for symbol, _ in top_pairs:
-                try:
-                    ticker_data = trading_bot.fetch_ticker(symbol)
-                    pairs_data.append(ticker_data)
-                except Exception as e:
-                    logging.warning(f"獲取{symbol}詳細數據失敗: {str(e)}")
-                    continue
+            if not top_pairs:
+                raise ValueError("未找到活躍的USDT合約交易對")
 
-            if not pairs_data:
-                raise ValueError("未找到活躍的USDT交易對")
-
-            logging.info(f"成功獲取{len(pairs_data)}個交易對的詳細數據")
-            return pairs_data
+            logging.info(f"成功獲取{len(top_pairs)}個合約交易對的數據")
+            return top_pairs
 
         except Exception as e:
             logging.error(f"獲取熱門交易對失敗: {str(e)}")

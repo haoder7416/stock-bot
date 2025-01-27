@@ -21,6 +21,12 @@ class PionexTradingBot:
             self.api_secret = api_secret
             self.base_url = "https://api.pionex.com"
 
+            # 初始化請求頭
+            self.headers = {
+                'PIONEX-KEY': self.api_key,
+                'Content-Type': 'application/json'
+            }
+
             # 測試連接
             self.test_connection()
 
@@ -36,20 +42,31 @@ class PionexTradingBot:
             logging.error(f"初始化失敗: {str(e)}")
             raise Exception(f"交易所連接失敗: {str(e)}")
 
-    def generate_signature(self, params):
-        """生成 API 簽名"""
+    def generate_signature(self, params, method, endpoint):
+        """生成 API 簽名
+        根據 Pionex API 文檔要求生成簽名：
+        1. 將所有參數按字母順序排序
+        2. 將參數轉換為 key=value 格式並用 & 連接
+        3. 添加請求方法和路徑
+        4. 使用 HMAC-SHA256 生成簽名
+        """
         try:
-            # 將參數轉換為字符串
+            # 生成時間戳
             timestamp = str(int(time.time() * 1000))
 
-            # 構建簽名字符串
-            sign_str = timestamp
-            if params:
-                # 按照字母順序對參數進行排序並拼接
-                sorted_params = sorted(params.items(), key=lambda x: x[0])
-                param_str = '&'.join(
-                    [f"{key}={value}" for key, value in sorted_params])
-                sign_str += param_str
+            # 準備參數字典
+            sign_params = params.copy() if params else {}
+            sign_params['timestamp'] = timestamp
+
+            # 按字母順序排序並生成參數字符串
+            sorted_params = sorted(sign_params.items(), key=lambda x: x[0])
+            param_str = '&'.join(
+                [f"{key}={value}" for key, value in sorted_params])
+
+            # 構建完整的簽名字符串：METHOD + PATH + QUERY
+            sign_str = f"{method.upper()}{endpoint}"
+            if param_str:
+                sign_str = f"{sign_str}?{param_str}"
 
             # 使用 HMAC-SHA256 生成簽名
             signature = hmac.new(
@@ -58,6 +75,9 @@ class PionexTradingBot:
                 hashlib.sha256
             ).hexdigest()
 
+            logging.debug(f"Signature string: {sign_str}")
+            logging.debug(f"Generated signature: {signature}")
+
             return signature, timestamp
 
         except Exception as e:
@@ -65,72 +85,61 @@ class PionexTradingBot:
             raise
 
     def make_request(self, method, endpoint, params=None):
-        """發送 API 請求"""
+        """發送API請求"""
         try:
-            url = f"https://api.pionex.com{endpoint}"
-            params = params or {}
+            url = f"{self.base_url}{endpoint}"
 
-            # 生成時間戳
-            timestamp = str(int(time.time() * 1000))
+            # 如果沒有提供參數，初始化空字典
+            if params is None:
+                params = {}
+
+            # 生成簽名
+            signature, timestamp = self.generate_signature(
+                params, method, endpoint)
+
+            # 添加時間戳到參數中
             params['timestamp'] = timestamp
 
-            # 按ASCII順序排序參數
-            sorted_params = sorted(params.items())
-            query_string = '&'.join(
-                [f"{key}={value}" for key, value in sorted_params])
-
-            # 組合簽名字符串
-            path_url = f"{endpoint}?{query_string}"
-            message = f"{method.upper()}{path_url}"
-
-            # 打印調試信息
-            logging.debug(f"Signature message: {message}")
-
-            # 生成HMAC-SHA256簽名
-            signature = hmac.new(
-                self.api_secret.encode('utf-8'),
-                message.encode('utf-8'),
-                hashlib.sha256
-            ).hexdigest()
-
-            # 設置請求頭
-            headers = {
-                'PIONEX-KEY': self.api_key,
-                'PIONEX-SIGNATURE': signature,
-                'Content-Type': 'application/json'
-            }
-
-            # 打印請求信息
-            logging.debug(f"Request URL: {url}?{query_string}")
-            logging.debug(f"Request Headers: {headers}")
+            # 更新請求頭
+            headers = self.headers.copy()
+            headers['PIONEX-SIGNATURE'] = signature
+            headers['PIONEX-TIMESTAMP'] = timestamp
 
             # 發送請求
-            if method == 'GET':
-                url = f"{url}?{query_string}"
-                response = requests.get(url, headers=headers, timeout=10)
-            elif method == 'POST':
-                response = requests.post(
-                    url, json=params, headers=headers, timeout=10)
+            response = requests.request(
+                method,
+                url,
+                params=params,
+                headers=headers,
+                timeout=10
+            )
 
-            # 打印響應信息
-            logging.debug(f"Response Status: {response.status_code}")
-            logging.debug(f"Response Text: {response.text}")
+            # 打印請求信息用於調試
+            logging.debug(f"Request URL: {response.url}")
+            logging.debug(f"Request Headers: {headers}")
+            logging.debug(f"Response: {response.text}")
 
-            # 檢查響應
+            # 檢查響應狀態
             response.raise_for_status()
+
+            # 解析響應
             data = response.json()
 
-            # 修改檢查邏輯：Pionex API 返回 result: true 表示成功
+            # 檢查API響應結果
             if not data.get('result', False):
                 error_msg = data.get('message', '未知錯誤')
-                logging.error(f"API 響應錯誤: {error_msg}")
-                logging.error(f"完整響應: {data}")
-                raise Exception(error_msg)
+                raise ValueError(f"API響應錯誤: {error_msg}")
 
             return data
 
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
             logging.error(f"API 請求失敗: {str(e)}")
+            raise
+        except ValueError as e:
+            logging.error(str(e))
+            raise
+        except Exception as e:
+            logging.error(f"未預期的錯誤: {str(e)}")
             raise
 
     def test_connection(self):
@@ -737,44 +746,23 @@ class PionexTradingBot:
             logging.error(f"情緒因子計算失敗: {str(e)}")
             return 1.0
 
-    def fetch_ticker(self, symbol):
-        """獲取單個交易對的行情數據"""
-        try:
-            response = self.make_request(
-                'GET', f'/api/v1/market/ticker?symbol={symbol}')
-
-            if not response.get('result', False):
-                raise ValueError(f"無法獲取{symbol}的行情數據")
-
-            ticker_data = response.get('data', {})
-            if not ticker_data:
-                raise ValueError(f"未找到{symbol}的行情數據")
-
-            return {
-                'symbol': symbol,
-                'price': float(ticker_data.get('close', 0)),
-                'volume': float(ticker_data.get('amount', 0)),
-                'price_change': ((float(ticker_data.get('close', 0)) - float(ticker_data.get('open', 0))) /
-                                 float(ticker_data.get('open', 1))) * 100
-            }
-        except Exception as e:
-            logging.warning(f"獲取{symbol}數據失敗: {str(e)}")
-            raise
-
     def update_trading_pairs(self):
         """更新交易對列表"""
         try:
             # 獲取前五大交易量幣種
-            top_pairs = self.market_analyzer.get_top_volume_pairs(self)
+            pairs_data = self.market_analyzer.get_top_volume_pairs(self)
+
+            if not pairs_data:
+                logging.warning("未獲取到任何交易對數據")
+                return
 
             # 更新UI顯示
             if hasattr(self, 'ui'):
-                self.ui.update_popular_pairs(top_pairs)  # 直接傳遞完整的市場數據
+                self.ui.update_popular_pairs(pairs_data)
+                logging.info("已更新UI顯示")
 
             # 更新交易對列表
-            self.trading_pairs = [pair['symbol']
-                                  for pair in top_pairs]  # 只保存交易對名稱
-
+            self.trading_pairs = [pair['symbol'] for pair in pairs_data]
             logging.info(f"成功更新交易對列表: {self.trading_pairs}")
 
         except Exception as e:
@@ -957,3 +945,74 @@ class PionexTradingBot:
                 'valid': False,
                 'message': f"驗證失敗: {str(e)}"
             }
+
+    def get_current_price(self, symbol):
+        """獲取當前價格"""
+        try:
+            # 使用 market/tickers API 獲取價格
+            params = {'type': 'PERP'}
+            response = self.make_request(
+                'GET', '/api/v1/market/tickers', params=params)
+
+            tickers = response.get('data', {}).get('tickers', [])
+            for ticker in tickers:
+                if ticker.get('symbol') == symbol:
+                    return float(ticker.get('close', 0))
+
+            raise ValueError(f"未找到{symbol}的價格數據")
+
+        except Exception as e:
+            logging.error(f"獲取{symbol}價格失敗: {str(e)}")
+            raise
+
+    def calculate_position_size(self, symbol, risk_amount):
+        """計算倉位大小"""
+        try:
+            current_price = self.get_current_price(symbol)
+
+            # 獲取市場情緒
+            sentiment = self.market_analyzer.analyze_market_sentiment(symbol)
+
+            # 計算情緒調整因子
+            sentiment_factor = self.calculate_sentiment_factor(sentiment)
+
+            # 計算基礎倉位大小
+            base_position = risk_amount / current_price
+
+            # 應用情緒調整
+            adjusted_position = base_position * sentiment_factor
+
+            return adjusted_position, current_price
+
+        except Exception as e:
+            logging.error(f"計算倉位大小失敗: {str(e)}")
+            raise
+
+    def place_order(self, symbol, side, amount):
+        """下單"""
+        try:
+            current_price = self.get_current_price(symbol)
+
+            # 構建訂單參數
+            params = {
+                'symbol': symbol,
+                'side': side.upper(),
+                'type': 'MARKET',
+                'quantity': str(amount)
+            }
+
+            # 發送訂單請求
+            response = self.make_request(
+                'POST', '/api/v1/order', params=params)
+
+            if response.get('result', False):
+                order_id = response.get('data', {}).get('orderId')
+                logging.info(f"下單成功: {symbol} {side} {
+                             amount} @ {current_price}")
+                return order_id
+            else:
+                raise ValueError(response.get('message', '下單失敗'))
+
+        except Exception as e:
+            logging.error(f"下單失敗: {str(e)}")
+            raise

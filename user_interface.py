@@ -1033,30 +1033,46 @@ class TradingUI:
     def update_popular_pairs(self, pairs_data):
         """更新熱門合約交易對顯示"""
         try:
+            if not pairs_data:
+                logging.warning("未收到交易對數據")
+                return
+
             for i, pair_data in enumerate(pairs_data):
+                if i >= len(self.pair_rows):
+                    logging.warning(f"超出顯示限制: {i + 1}")
+                    break
+
                 # 更新排名
                 self.pair_rows[i][0].configure(text=f"#{i+1}")
 
-                # 更新交易對
-                self.pair_rows[i][1].configure(text=pair_data['symbol'])
+                # 更新交易對名稱
+                symbol = pair_data['symbol'].replace(
+                    '_PERP', '')  # 移除 _PERP 後綴以簡化顯示
+                self.pair_rows[i][1].configure(text=symbol)
 
-                # 更新交易量
+                # 更新交易量，根據大小使用不同單位
                 volume = pair_data['volume']
-                volume_text = f"{
-                    volume/1000000:.1f}M" if volume > 1000000 else f"{volume/1000:.1f}K"
+                if volume >= 1_000_000:
+                    volume_text = f"{volume/1_000_000:.1f}M"
+                elif volume >= 1_000:
+                    volume_text = f"{volume/1_000:.1f}K"
+                else:
+                    volume_text = f"{volume:.1f}"
                 self.pair_rows[i][2].configure(text=f"{volume_text} USDT")
 
                 # 更新價格
                 self.pair_rows[i][3].configure(
                     text=f"${pair_data['price']:.4f}")
 
-                # 更新漲跌幅
-                change = pair_data['price_change']
-                color = 'Success' if change >= 0 else 'Error'
-                self.pair_rows[i][4].configure(
-                    text=f"{'+' if change >= 0 else ''}{change:.2f}%",
-                    style=f'Value{color}.TLabel'
-                )
+                # 更新漲跌幅並設置顏色
+                price_change = pair_data['price_change']
+                change_text = f"{'+' if price_change >=
+                                 0 else ''}{price_change:.2f}%"
+                style = 'ValueSuccess.TLabel' if price_change >= 0 else 'ValueError.TLabel'
+                self.pair_rows[i][4].configure(text=change_text, style=style)
+
+            logging.info("成功更新熱門合約交易對顯示")
+
         except Exception as e:
             logging.error(f"更新熱門合約交易對顯示失敗: {str(e)}")
             self.add_log(f"更新熱門合約交易對顯示失敗: {str(e)}", "error")
@@ -1508,13 +1524,13 @@ class TradingUI:
                         continue
 
                     # 獲取交易對的即時數據
-                    ticker = self.trading_bot.fetch_ticker(pair)
+                    ticker = self.trading_bot.get_current_price(pair)
                     if ticker:
                         pairs_data.append({
                             'symbol': pair,
                             'volume': float(volume) if volume else 0,
-                            'price': float(ticker.get('last', 0)),
-                            'price_change': float(ticker.get('percentage', 0))
+                            'price': float(ticker),
+                            'price_change': float(ticker)
                         })
 
                     # 只保留前5個交易對
@@ -1636,3 +1652,17 @@ class TradingUI:
             command=self.save_settings
         )
         self.save_button.pack(side="right", padx=5)
+
+    def update_price_display(self, pair):
+        """更新價格顯示"""
+        try:
+            if not self.trading_bot:
+                return
+
+            current_price = self.trading_bot.get_current_price(pair)
+            self.price_label.configure(
+                text=f"{pair.split('_')[0]}: ${current_price:,.2f}")
+
+        except Exception as e:
+            logging.error(f"更新價格顯示失敗: {str(e)}")
+            self.add_log(f"更新價格顯示失敗: {str(e)}", "error")

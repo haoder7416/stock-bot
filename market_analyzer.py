@@ -1,4 +1,5 @@
 import logging
+import time
 
 
 class EnhancedMarketAnalyzer:
@@ -63,10 +64,13 @@ class EnhancedMarketAnalyzer:
                     if not symbol or not symbol.endswith('_USDT_PERP'):
                         continue
 
-                    # 使用volume作為交易量（24小時交易量）
-                    volume = float(ticker.get('volume', 0))
+                    # 獲取時間戳
+                    timestamp = ticker.get('time', int(time.time() * 1000))
+
+                    # 獲取交易數據
+                    volume = float(ticker.get('volume', 0))  # 24小時交易量
                     amount = float(ticker.get('amount', 0))  # 24小時交易額
-                    if volume <= 0:
+                    if amount <= 0:
                         continue
 
                     # 處理價格數據
@@ -85,11 +89,13 @@ class EnhancedMarketAnalyzer:
                     pair_data = {
                         'symbol': symbol,
                         'price': close_price,
-                        'volume': amount,  # 使用交易額作為交易量
+                        'volume': amount,  # 使用交易額
                         'price_change': price_change,
                         'high': high_price,
                         'low': low_price,
-                        'volume_coin': volume  # 原始幣種交易量
+                        'volume_coin': volume,  # 原始幣種交易量
+                        'time': timestamp,  # 添加時間戳
+                        'count': int(ticker.get('count', 0))  # 交易次數
                     }
                     usdt_pairs.append((symbol, amount, pair_data))
                     logging.debug(f"處理交易對數據: {pair_data}")

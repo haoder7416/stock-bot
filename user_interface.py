@@ -5,6 +5,7 @@ from PIL import Image, ImageTk
 from datetime import datetime
 import logging
 from market_analyzer import EnhancedMarketAnalyzer
+from trading_bot import PionexTradingBot
 
 
 class TradingUI:
@@ -19,7 +20,7 @@ class TradingUI:
 
         # 設置網格配置權重
         self.window.grid_columnconfigure(0, weight=1)
-        self.window.grid_columnconfigure(1, weight=1)
+        self.window.grid_columnconfigure(1, weight=2)
         self.window.grid_rowconfigure(1, weight=1)
 
         # 綁定視窗大小變化事件
@@ -156,18 +157,18 @@ class TradingUI:
         left_panel.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         left_panel.grid_columnconfigure(0, weight=1)
 
-        self.create_api_section(left_panel)
-        self.create_investment_section(left_panel)
-        self.create_risk_section(left_panel)
-        self.create_popular_pairs_section(left_panel)
+        # 創建設置區域（包含滾動條）
+        self.create_settings_section(left_panel)
 
         # 右側面板 (交易和監控)
         right_panel = self.create_panel("交易", 1)
         right_panel.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
         right_panel.grid_columnconfigure(0, weight=1)
 
-        self.create_strategy_section(right_panel)
+        # 創建帳戶狀態區域
         self.create_account_status_section(right_panel)
+
+        # 創建交易狀態監控區域
         self.create_status_section(right_panel)
 
     def create_navbar(self):
@@ -605,89 +606,214 @@ class TradingUI:
     def run(self):
         self.window.mainloop()
 
-    def create_api_section(self, parent):
-        """創建 API 設置區域"""
-        api_frame = ttk.LabelFrame(
-            parent,
+    def create_settings_section(self, parent):
+        """創建設置區域"""
+        # 創建一個容器來包含所有設置
+        settings_container = ttk.Frame(parent)
+        settings_container.pack(fill="both", expand=True)  # 移除 padx 和 pady
+
+        # 創建一個 Canvas 和滾動條
+        canvas = tk.Canvas(settings_container,
+                           bg=self.current_theme['surface'],
+                           highlightthickness=0,  # 移除白色外框
+                           bd=0)  # 移除邊框
+        scrollbar = ttk.Scrollbar(
+            settings_container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        # 配置滾動
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        # 調整 canvas window 的寬度以填滿整個區域
+        def configure_canvas(event):
+            canvas.itemconfig('window', width=event.width)
+        canvas.bind('<Configure>', configure_canvas)
+
+        # 創建 window 時設置 tag
+        canvas.create_window((0, 0), window=scrollable_frame,
+                             anchor="nw", tags='window')
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 打包滾動元素（移除間距）
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # API 設置
+        settings_frame = ttk.LabelFrame(
+            scrollable_frame,
             text="API 設置",
             style='Card.TLabelframe'
         )
-        api_frame.pack(fill="x", padx=15, pady=10)
+        settings_frame.pack(fill="x", pady=5)
 
-        # API Key 輸入框
-        key_frame = ttk.Frame(api_frame)
-        key_frame.pack(fill="x", pady=5)
+        # API Key 輸入
+        api_key_frame = ttk.Frame(settings_frame)
+        api_key_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(api_key_frame, text="API Key",
+                  style='FieldLabel.TLabel').pack(side="top", anchor="w")
+        self.api_key_entry = ttk.Entry(api_key_frame, width=50)
+        self.api_key_entry.pack(side="top", fill="x")
 
-        ttk.Label(
-            key_frame,
-            text="API Key",
-            style='FieldLabel.TLabel'
-        ).pack(anchor="w")
+        # API Secret 輸入
+        api_secret_frame = ttk.Frame(settings_frame)
+        api_secret_frame.pack(fill="x", padx=5, pady=2)
+        ttk.Label(api_secret_frame, text="API Secret",
+                  style='FieldLabel.TLabel').pack(side="top", anchor="w")
+        self.api_secret_entry = ttk.Entry(api_secret_frame, show="*", width=50)
+        self.api_secret_entry.pack(side="top", fill="x")
 
-        self.api_key = ttk.Entry(
-            key_frame,
-            style='Input.TEntry',
-            width=40
-        )
-        self.api_key.pack(fill="x", pady=(5, 0))
-        self.api_key.insert(0, "請輸入您的 API Key")
-        self.api_key.bind(
-            '<FocusIn>', lambda e: self.on_entry_focus_in(e, "請輸入您的 API Key"))
-        self.api_key.bind(
-            '<FocusOut>', lambda e: self.on_entry_focus_out(e, "請輸入您的 API Key"))
-        self.api_key.bind('<KeyRelease>', self.on_api_input_change)
+        # 顯示密碼選項和連接按鈕框架
+        control_frame = ttk.Frame(settings_frame)
+        control_frame.pack(fill="x", padx=5, pady=2)
 
-        # API Secret 輸入框
-        secret_frame = ttk.Frame(api_frame)
-        secret_frame.pack(fill="x", pady=10)
-
-        ttk.Label(
-            secret_frame,
-            text="API Secret",
-            style='FieldLabel.TLabel'
-        ).pack(anchor="w")
-
-        self.api_secret = ttk.Entry(
-            secret_frame,
-            style='Input.TEntry',
-            width=40,
-            show="•"
-        )
-        self.api_secret.pack(fill="x", pady=(5, 0))
-        self.api_secret.bind('<KeyRelease>', self.on_api_input_change)
-
-        # 顯示/隱藏密碼按鈕
-        show_secret_frame = ttk.Frame(secret_frame)
-        show_secret_frame.pack(fill="x", pady=(5, 0))
-
-        self.show_secret = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            show_secret_frame,
+        # 顯示密碼選項
+        self.show_secret_var = tk.BooleanVar()
+        self.show_secret_check = ttk.Checkbutton(
+            control_frame,
             text="顯示",
-            variable=self.show_secret,
-            command=self.toggle_secret_visibility,
-            style='Small.TCheckbutton'
-        ).pack(side="left")
+            variable=self.show_secret_var,
+            command=self.toggle_secret_display,
+            style='Switch.TCheckbutton'
+        )
+        self.show_secret_check.pack(side="left")
 
-        # API 連線狀態指示
-        self.api_status_label = ttk.Label(
-            show_secret_frame,
-            text="⚪ 未連接",  # 使用圓形指示燈
+        # 連接狀態指示
+        self.connection_status = ttk.Label(
+            control_frame,
+            text="● 未連接",
             style='StatusError.TLabel'
         )
-        self.api_status_label.pack(side="right")
+        self.connection_status.pack(side="left", padx=10)
 
-        # 添加連線按鈕
-        button_frame = ttk.Frame(api_frame)
-        button_frame.pack(fill="x", pady=(10, 0))
+        # 按鈕框架
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(side="right")
 
+        # 連接按鈕
         self.connect_button = ttk.Button(
             button_frame,
-            text="連線交易所",
+            text="連接交易所",
             style='Primary.TButton',
-            command=self.test_api_connection
+            command=self.connect_exchange
         )
-        self.connect_button.pack(side="right", padx=5)
+        self.connect_button.pack(side="left", padx=5)
+
+        # 取消連線按鈕
+        self.disconnect_button = ttk.Button(
+            button_frame,
+            text="取消連線",
+            style='Error.TButton',
+            command=self.disconnect_exchange,
+            state='disabled'
+        )
+        self.disconnect_button.pack(side="left", padx=5)
+
+        # 投資設置
+        self.create_investment_section(scrollable_frame)
+
+        # 風險管理
+        self.create_risk_section(scrollable_frame)
+
+        # 交易策略
+        self.create_strategy_section(scrollable_frame)
+
+        # 熱門合約交易對
+        self.create_popular_pairs_section(scrollable_frame)
+
+        # 綁定滾輪事件
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+    def connect_exchange(self):
+        """連接交易所"""
+        try:
+            api_key = self.api_key_entry.get().strip()
+            api_secret = self.api_secret_entry.get().strip()
+
+            if not api_key or not api_secret:
+                self.add_log("請輸入 API Key 和 Secret", "error")
+                return
+
+            # 初始化交易機器人
+            self.trading_bot = PionexTradingBot(api_key, api_secret)
+
+            # 更新UI狀態
+            self.connection_status.configure(
+                text="● 已連接", style='StatusSuccess.TLabel')
+            self.connect_button.configure(state='disabled')
+            self.disconnect_button.configure(state='normal')
+
+            # 禁用輸入欄位
+            self.api_key_entry.configure(state='disabled')
+            self.api_secret_entry.configure(state='disabled')
+            self.show_secret_check.configure(state='disabled')
+
+            # 啟用交易相關按鈕
+            self.start_button.configure(state='normal')
+
+            self.add_log("成功連接到交易所", "success")
+
+        except Exception as e:
+            self.add_log(f"連接失敗: {str(e)}", "error")
+
+    def disconnect_exchange(self):
+        """取消連線"""
+        try:
+            # 停止所有交易
+            self.stop_trading()
+
+            # 清理交易機器人實例
+            self.trading_bot = None
+
+            # 更新UI狀態
+            self.connection_status.configure(
+                text="● 未連接", style='StatusError.TLabel')
+            self.connect_button.configure(state='normal')
+            self.disconnect_button.configure(state='disabled')
+
+            # 啟用輸入欄位
+            self.api_key_entry.configure(state='normal')
+            self.api_secret_entry.configure(state='normal')
+            self.show_secret_check.configure(state='normal')
+
+            # 禁用交易相關按鈕
+            self.start_button.configure(state='disabled')
+            self.stop_button.configure(state='disabled')
+
+            # 重置顯示
+            self.reset_display()
+
+            self.add_log("已斷開連接", "info")
+
+        except Exception as e:
+            self.add_log(f"斷開連接時發生錯誤: {str(e)}", "error")
+
+    def reset_display(self):
+        """重置所有顯示為初始狀態"""
+        try:
+            # 重置狀態顯示
+            self.status_indicator.configure(
+                text="⚪ 未連接", style='StatusError.TLabel')
+            self.price_label.configure(text="BTC: $ --,---")
+
+            # 重置策略分析顯示
+            self.trend_label.configure(text="--")
+            self.volatility_label.configure(text="--")
+            self.signal_label.configure(text="--")
+
+            # 重置交易對顯示
+            for row in self.pair_rows:
+                for label in row:
+                    label.configure(text="--")
+
+        except Exception as e:
+            logging.error(f"重置顯示失敗: {str(e)}")
+            self.add_log(f"重置顯示失敗: {str(e)}", "error")
 
     def create_investment_section(self, parent):
         """創建投資設置區域"""
@@ -1008,7 +1134,7 @@ class TradingUI:
         self.pairs_container.pack(fill="x", padx=10, pady=5)
 
         # 創建表頭
-        headers = ["排名", "交易對", "24h交易量", "價格", "漲跌幅"]
+        headers = ["排名", "交易對", "交易額"]
         for i, header in enumerate(headers):
             ttk.Label(
                 self.pairs_container,
@@ -1047,29 +1173,16 @@ class TradingUI:
 
                 # 更新交易對名稱
                 symbol = pair_data['symbol'].replace(
-                    '_PERP', '')  # 移除 _PERP 後綴以簡化顯示
-                self.pair_rows[i][1].configure(text=symbol)
+                    '_USDT_PERP', '')  # 移除 _USDT_PERP 後綴以簡化顯示
+                self.pair_rows[i][1].configure(text=f"{symbol}/USDT")
 
-                # 更新交易量，根據大小使用不同單位
+                # 更新交易額，使用億/萬作為單位
                 volume = pair_data['volume']
-                if volume >= 1_000_000:
-                    volume_text = f"{volume/1_000_000:.1f}M"
-                elif volume >= 1_000:
-                    volume_text = f"{volume/1_000:.1f}K"
+                if volume >= 100_000_000:  # 1億
+                    volume_text = f"{volume/100_000_000:.2f}億"
                 else:
-                    volume_text = f"{volume:.1f}"
-                self.pair_rows[i][2].configure(text=f"{volume_text} USDT")
-
-                # 更新價格
-                self.pair_rows[i][3].configure(
-                    text=f"${pair_data['price']:.4f}")
-
-                # 更新漲跌幅並設置顏色
-                price_change = pair_data['price_change']
-                change_text = f"{'+' if price_change >=
-                                 0 else ''}{price_change:.2f}%"
-                style = 'ValueSuccess.TLabel' if price_change >= 0 else 'ValueError.TLabel'
-                self.pair_rows[i][4].configure(text=change_text, style=style)
+                    volume_text = f"{volume/10_000:.2f}萬"
+                self.pair_rows[i][2].configure(text=volume_text)
 
             logging.info("成功更新熱門合約交易對顯示")
 
@@ -1389,237 +1502,6 @@ class TradingUI:
             variable=self.notify_loss
         ).pack(anchor="w", pady=2)
 
-    def test_api_connection(self):
-        """測試API連接"""
-        try:
-            # 驗證API金鑰
-            if not self.api_key.get() or not self.api_secret.get():
-                raise ValueError("請輸入API金鑰")
-
-            # 更新連接狀態
-            self.api_status_label.configure(
-                text="🟡 連接中...",
-                style='StatusWarning.TLabel'
-            )
-            self.window.update()
-
-            try:
-                # 使用PionexTradingBot進行連接
-                from trading_bot import PionexTradingBot
-                self.trading_bot = PionexTradingBot(
-                    api_key=self.api_key.get().strip(),
-                    api_secret=self.api_secret.get().strip()
-                )
-
-                # 更新連接狀態
-                self.api_status_label.configure(
-                    text="🟢 已連接",
-                    style='StatusSuccess.TLabel'
-                )
-
-                # 獲取並更新帳戶狀態
-                account_status = self.trading_bot.get_account_status()
-                if account_status:
-                    self.update_account_status(account_status)
-                    self.add_log("[系統] 帳戶資訊更新成功", "system")
-
-                # 獲取並更新熱門合約交易對
-                self.update_popular_pairs_data()
-
-                # 啟用交易相關設置
-                self.enable_trading_settings()
-
-            except Exception as e:
-                self.trading_bot = None
-                raise ValueError(f"連接失敗: {str(e)}")
-
-        except Exception as e:
-            self.api_status_label.configure(
-                text="🔴 連接失敗",
-                style='StatusError.TLabel'
-            )
-            messagebox.showerror("錯誤", str(e))
-
-    def update_account_status(self, status):
-        """更新帳戶狀態顯示"""
-        try:
-            # 更新總資產
-            total_balance = status['total_balance']
-            self.total_balance_label.configure(
-                text=f"{total_balance:.2f}"
-            )
-
-            # 更新可用資金
-            available_balance = status['available_balance']
-            self.available_balance_label.configure(
-                text=f"{available_balance:.2f}"
-            )
-
-            # 更新投資金額滑動條的範圍
-            self.investment_amount.configure(
-                from_=0,
-                to=available_balance
-            )
-            # 設置預設值為0
-            self.investment_amount.set(0)
-            self.investment_amount_value.configure(
-                text="0.00"
-            )
-
-            # 更新資金使用率
-            self.capital_usage_label.configure(
-                text=f"{status.get('capital_usage', 0):.2f}%"
-            )
-
-            # 更新收益率
-            self.total_pnl_label.configure(
-                text=f"{'+' if status.get('total_pnl', 0) >=
-                        0 else ''}{status.get('total_pnl', 0):.2f}%",
-                style='ValueSuccess.TLabel' if status.get(
-                    'total_pnl', 0) >= 0 else 'ValueError.TLabel'
-            )
-
-            # 更新日收益
-            self.daily_pnl_label.configure(
-                text=f"{'+' if status.get('daily_pnl', 0) >=
-                        0 else ''}{status.get('daily_pnl', 0):.2f}%",
-                style='ValueSuccess.TLabel' if status.get(
-                    'daily_pnl', 0) >= 0 else 'ValueError.TLabel'
-            )
-
-            # 更新交易勝率
-            self.win_rate_label.configure(
-                text=f"{status.get('win_rate', 0):.2f}%"
-            )
-
-        except Exception as e:
-            logging.error(f"更新帳戶狀態顯示失敗: {str(e)}")
-            self.add_log(f"[系統] 更新帳戶狀態顯示失敗: {str(e)}", "error")
-
-    def update_popular_pairs_data(self):
-        """更新熱門合約交易對數據"""
-        try:
-            # 創建市場分析器實例
-            market_analyzer = EnhancedMarketAnalyzer()
-
-            # 獲取熱門交易對數據
-            top_pairs = market_analyzer.get_top_volume_pairs(self.trading_bot)
-            if not top_pairs or not isinstance(top_pairs, list):
-                raise ValueError("無法獲取熱門交易對數據")
-
-            # 準備數據格式
-            pairs_data = []
-            for pair_info in top_pairs:
-                try:
-                    # 檢查pair_info的格式
-                    if isinstance(pair_info, (list, tuple)) and len(pair_info) >= 2:
-                        pair, volume = pair_info[0], pair_info[1]
-                    elif isinstance(pair_info, dict):
-                        pair = pair_info.get('symbol')
-                        volume = pair_info.get('volume', 0)
-                    else:
-                        continue
-
-                    if not pair:
-                        continue
-
-                    # 獲取交易對的即時數據
-                    ticker = self.trading_bot.get_current_price(pair)
-                    if ticker:
-                        pairs_data.append({
-                            'symbol': pair,
-                            'volume': float(volume) if volume else 0,
-                            'price': float(ticker),
-                            'price_change': float(ticker)
-                        })
-
-                    # 只保留前5個交易對
-                    if len(pairs_data) >= 5:
-                        break
-
-                except Exception as e:
-                    self.add_log(f"獲取{pair}數據失敗: {str(e)}", "warning")
-                    continue
-
-            # 確保至少有一些數據
-            if pairs_data:
-                # 更新UI顯示
-                self.update_popular_pairs(pairs_data)
-            else:
-                self.add_log("無法獲取任何交易對數據", "warning")
-
-        except Exception as e:
-            error_msg = f"更新熱門合約交易對失敗: {str(e)}"
-            logging.error(error_msg)
-            self.add_log(error_msg, "error")
-
-    def on_api_input_change(self, event):
-        """處理API輸入框的變化事件"""
-        try:
-            # 檢查API金鑰是否已輸入
-            has_api_key = bool(self.api_key.get().strip())
-            has_api_secret = bool(self.api_secret.get().strip())
-
-            # 更新API狀態標籤
-            if has_api_key and has_api_secret:
-                self.api_status_label.configure(
-                    text="⚪ 未連接",
-                    style='StatusWarning.TLabel'
-                )
-            else:
-                self.api_status_label.configure(
-                    text="⚪ 未連接",
-                    style='StatusError.TLabel'
-                )
-
-            # 更新連接按鈕狀態
-            if has_api_key and has_api_secret:
-                self.connect_button.configure(state='normal')
-            else:
-                self.connect_button.configure(state='disabled')
-
-        except Exception as e:
-            logging.error(f"處理API輸入變化時發生錯誤: {str(e)}")
-
-    def on_entry_focus_in(self, event, placeholder):
-        """當輸入框獲得焦點時"""
-        if event.widget.get() == placeholder:
-            event.widget.delete(0, tk.END)
-            if event.widget == self.api_secret:
-                event.widget.configure(show="•")
-
-    def on_entry_focus_out(self, event, placeholder):
-        """當輸入框失去焦點時"""
-        if not event.widget.get():
-            event.widget.insert(0, placeholder)
-            if event.widget == self.api_secret and event.widget.get() == placeholder:
-                event.widget.configure(show="")
-
-    def toggle_secret_visibility(self):
-        """切換API密碼的顯示/隱藏狀態"""
-        try:
-            current_text = self.api_secret.get()
-            if current_text and current_text != "請輸入您的 API Secret":
-                if self.show_secret.get():
-                    self.api_secret.configure(show="")
-                else:
-                    self.api_secret.configure(show="•")
-        except Exception as e:
-            logging.error(f"切換密碼顯示狀態時發生錯誤: {str(e)}")
-
-    def clear_log(self):
-        """清除交易日誌"""
-        try:
-            # 清除日誌內容
-            self.status_text.delete(1.0, tk.END)
-
-            # 添加清除記錄
-            self.add_log("日誌已清除", "system")
-
-        except Exception as e:
-            logging.error(f"清除日誌時發生錯誤: {str(e)}")
-            messagebox.showerror("錯誤", f"清除日誌失敗: {str(e)}")
-
     def create_control_buttons(self, parent):
         """創建控制按鈕區域"""
         button_frame = ttk.Frame(parent)
@@ -1666,3 +1548,28 @@ class TradingUI:
         except Exception as e:
             logging.error(f"更新價格顯示失敗: {str(e)}")
             self.add_log(f"更新價格顯示失敗: {str(e)}", "error")
+
+    def toggle_secret_display(self):
+        """切換API密碼的顯示/隱藏狀態"""
+        try:
+            current_text = self.api_secret_entry.get()
+            if current_text and current_text != "請輸入您的 API Secret":
+                if self.show_secret_var.get():
+                    self.api_secret_entry.configure(show="")
+                else:
+                    self.api_secret_entry.configure(show="*")
+        except Exception as e:
+            logging.error(f"切換密碼顯示狀態時發生錯誤: {str(e)}")
+
+    def clear_log(self):
+        """清除交易日誌"""
+        try:
+            # 清除日誌內容
+            self.status_text.delete(1.0, tk.END)
+
+            # 添加清除記錄
+            self.add_log("日誌已清除", "system")
+
+        except Exception as e:
+            logging.error(f"清除日誌時發生錯誤: {str(e)}")
+            self.add_log(f"清除日誌失敗: {str(e)}", "error")

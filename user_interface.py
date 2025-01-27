@@ -433,23 +433,23 @@ class TradingUI:
     def get_settings(self):
         """獲取設置，並進行數據驗證"""
         try:
-            investment_amount = self.investment_amount.get().strip()
-            leverage = float(self.leverage.get())  # 直接轉換為浮點數
+            # 直接獲取滑動條的值（已經是float類型）
+            investment_amount = float(self.investment_amount.get())
+            leverage = float(self.leverage.get())
 
             # 驗證投資金額
-            if not investment_amount:
+            if investment_amount <= 0:
                 raise ValueError("請輸入投資金額")
-            investment_amount = float(investment_amount)
 
             # 驗證槓桿倍數
             if not 1 <= leverage <= 20:
                 raise ValueError("槓桿倍數必須在 1-20 倍之間")
 
             return {
-                'api_key': self.api_key.get(),
-                'api_secret': self.api_secret.get(),
+                'api_key': self.api_key.get().strip(),
+                'api_secret': self.api_secret.get().strip(),
                 'investment_amount': investment_amount,
-                'leverage': int(leverage),  # 轉換為整數
+                'leverage': int(leverage),
                 'risk_level': self.risk_level.get(),
                 'grid_trading': self.grid_trading.get(),
                 'smart_entry': self.smart_entry.get(),
@@ -704,7 +704,7 @@ class TradingUI:
         self.investment_amount = ttk.Scale(
             amount_frame,
             from_=0,
-            to=0,  # 初始設為0，等待總資產更新後再設定
+            to=100,  # 初始最大值，將在連接後更新
             orient="horizontal",
             command=self.update_investment_amount
         )
@@ -749,7 +749,7 @@ class TradingUI:
         self.leverage_value.pack(side="left", padx=5)
 
         # 快速選擇按鈕
-        self.leverage_buttons = ttk.Frame(inv_frame)  # 保存為類的屬性
+        self.leverage_buttons = ttk.Frame(inv_frame)
         self.leverage_buttons.pack(fill="x", pady=5)
 
         for value in [1, 3, 5, 10, 20]:
@@ -1234,8 +1234,20 @@ class TradingUI:
 
     def add_log(self, message, log_type="system"):
         """添加日誌訊息"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
+        # 使用完整的日期時間格式
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 根據日誌類型添加標籤
+        type_label = {
+            "system": "[系統]",
+            "trade": "[交易]",
+            "signal": "[信號]",
+            "error": "[錯誤]",
+            "warning": "[警告]"
+        }.get(log_type, "[系統]")
+
+        # 組合日誌條目
+        log_entry = f"[{timestamp}] {type_label} {message}\n"
 
         self.status_text.insert(tk.END, log_entry, log_type)
         self.status_text.see(tk.END)  # 自動滾動到最新的日誌
@@ -1362,25 +1374,24 @@ class TradingUI:
             self.window.update()
 
             try:
-                # 初始化交易所連接
-                import ccxt
-                self.exchange = ccxt.binance({
-                    'apiKey': self.api_key.get().strip(),
-                    'secret': self.api_secret.get().strip(),
-                    'enableRateLimit': True,
-                    'options': {
-                        'defaultType': 'future',
-                    }
-                })
-
-                # 測試API連接
-                self.exchange.fetch_balance()
+                # 使用PionexTradingBot進行連接
+                from trading_bot import PionexTradingBot
+                self.trading_bot = PionexTradingBot(
+                    api_key=self.api_key.get().strip(),
+                    api_secret=self.api_secret.get().strip()
+                )
 
                 # 更新連接狀態
                 self.api_status_label.configure(
                     text="🟢 已連接",
                     style='StatusSuccess.TLabel'
                 )
+
+                # 獲取並更新帳戶狀態
+                account_status = self.trading_bot.get_account_status()
+                if account_status:
+                    self.update_account_status(account_status)
+                    self.add_log("[系統] 帳戶資訊更新成功", "system")
 
                 # 獲取並更新熱門合約交易對
                 self.update_popular_pairs_data()
@@ -1389,7 +1400,7 @@ class TradingUI:
                 self.enable_trading_settings()
 
             except Exception as e:
-                self.exchange = None
+                self.trading_bot = None
                 raise ValueError(f"連接失敗: {str(e)}")
 
         except Exception as e:
@@ -1399,6 +1410,62 @@ class TradingUI:
             )
             messagebox.showerror("錯誤", str(e))
 
+    def update_account_status(self, status):
+        """更新帳戶狀態顯示"""
+        try:
+            # 更新總資產
+            total_balance = status['total_balance']
+            self.total_balance_label.configure(
+                text=f"{total_balance:.2f}"
+            )
+
+            # 更新可用資金
+            available_balance = status['available_balance']
+            self.available_balance_label.configure(
+                text=f"{available_balance:.2f}"
+            )
+
+            # 更新投資金額滑動條的範圍
+            self.investment_amount.configure(
+                from_=0,
+                to=available_balance
+            )
+            # 設置預設值為0
+            self.investment_amount.set(0)
+            self.investment_amount_value.configure(
+                text="0.00"
+            )
+
+            # 更新資金使用率
+            self.capital_usage_label.configure(
+                text=f"{status.get('capital_usage', 0):.2f}%"
+            )
+
+            # 更新收益率
+            self.total_pnl_label.configure(
+                text=f"{'+' if status.get('total_pnl', 0) >=
+                        0 else ''}{status.get('total_pnl', 0):.2f}%",
+                style='ValueSuccess.TLabel' if status.get(
+                    'total_pnl', 0) >= 0 else 'ValueError.TLabel'
+            )
+
+            # 更新日收益
+            self.daily_pnl_label.configure(
+                text=f"{'+' if status.get('daily_pnl', 0) >=
+                        0 else ''}{status.get('daily_pnl', 0):.2f}%",
+                style='ValueSuccess.TLabel' if status.get(
+                    'daily_pnl', 0) >= 0 else 'ValueError.TLabel'
+            )
+
+            # 更新交易勝率
+            self.win_rate_label.configure(
+                text=f"{status.get('win_rate', 0):.2f}%"
+            )
+
+        except Exception as e:
+            logging.error(f"更新帳戶狀態顯示失敗: {str(e)}")
+            self.add_log(f"[系統] 更新帳戶狀態顯示失敗: {str(e)}", "error")
+
     def update_popular_pairs_data(self):
         """更新熱門合約交易對數據"""
         try:
@@ -1406,13 +1473,13 @@ class TradingUI:
             market_analyzer = EnhancedMarketAnalyzer()
 
             # 獲取熱門交易對數據
-            top_pairs = market_analyzer.get_top_volume_pairs(self.exchange)
+            top_pairs = market_analyzer.get_top_volume_pairs(self.trading_bot)
 
             # 準備數據格式
             pairs_data = []
             for pair, volume in top_pairs:
                 try:
-                    ticker = self.exchange.fetch_ticker(pair)
+                    ticker = self.trading_bot.fetch_ticker(pair)
                     pairs_data.append({
                         'symbol': pair,
                         'volume': volume,

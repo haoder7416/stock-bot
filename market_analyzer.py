@@ -28,48 +28,40 @@ class EnhancedMarketAnalyzer:
             'recommendations': recommendations
         }
 
-    def get_top_volume_pairs(self, exchange, limit=5):
+    def get_top_volume_pairs(self, trading_bot, limit=5):
         """獲取前五大交易量的合約幣種"""
         try:
-            if not exchange:
-                raise ValueError("交易所實例未初始化")
+            if not trading_bot:
+                raise ValueError("交易機器人實例未初始化")
 
-            # 獲取所有市場數據
-            markets = exchange.fetch_markets()
-            if not markets:
+            # 使用Pionex API獲取市場數據
+            response = trading_bot.make_request(
+                'GET', '/api/v1/market/tickers')
+            if not response.get('result', False):
                 raise ValueError("無法獲取市場數據")
 
             # 篩選USDT合約對
-            futures_pairs = [
-                market['symbol'] for market in markets
-                if (market['quote'] == 'USDT' and
-                    market['type'] == 'future' and
-                    'active' in market and market['active'])  # 只選擇活躍的合約
-            ]
+            pairs_data = []
+            tickers = response.get('data', [])
+            if isinstance(tickers, dict):  # 如果返回的是字典格式
+                tickers = [{'symbol': k, **v} for k, v in tickers.items()]
 
-            if not futures_pairs:
-                raise ValueError("未找到活躍的USDT合約對")
-
-            # 獲取24小時交易量
-            volumes = []
-            for pair in futures_pairs[:20]:  # 限制初始查詢數量以提高效率
+            for ticker in tickers:
                 try:
-                    ticker = exchange.fetch_ticker(pair)
-                    if ticker and 'quoteVolume' in ticker and ticker['quoteVolume']:
-                        volumes.append((
-                            pair,
-                            ticker['quoteVolume']  # USDT交易量
-                        ))
-                except Exception as e:
-                    logging.warning(f"獲取{pair}交易量數據失敗: {str(e)}")
+                    symbol = ticker.get('symbol', '')
+                    if '_USDT' in symbol:  # Pionex使用_USDT格式
+                        volume = float(ticker.get('volume', 0))
+                        pairs_data.append((symbol, volume))
+                except (ValueError, TypeError) as e:
+                    logging.warning(f"處理交易對數據失敗: {str(e)}")
                     continue
 
-            if not volumes:
-                raise ValueError("無法獲取任何交易量數據")
+            if not pairs_data:
+                raise ValueError("未找到活躍的USDT交易對")
 
             # 按交易量排序並返回前N個
             return sorted(
-                volumes,
+                pairs_data,
                 key=lambda x: x[1],
                 reverse=True
             )[:limit]

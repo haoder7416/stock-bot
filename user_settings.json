@@ -1,6 +1,8 @@
 {
-   "investment_amount": 130.0,
-    "leverage": 5,
+    "api_key": "5MqyowcrVBZCPtFiNgi7yLFWVw8kyPkf4mJFx4VCKnrVDjwTHMGQfvACWahCiXZEsS",
+    "api_secret": "dLlRLRKCaPRxYPp3LHWRwAR9DzwAtPDOHDu6gEoHObQMte0AJsglWJU8K4r8Bvuz",
+    "investment_amount": 2.5860539175811237,
+    "leverage": 3,
     "risk_level": "\u4e2d\u7b49",
     "grid_trading": true,
     "smart_entry": true,

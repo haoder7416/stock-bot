@@ -1032,25 +1032,34 @@ class TradingUI:
 
     def update_popular_pairs(self, pairs_data):
         """更新熱門合約交易對顯示"""
-        for i, (pair_data, row) in enumerate(zip(pairs_data, self.pair_rows)):
-            # 更新排名
-            row[0].configure(text=f"#{i+1}")
-            # 更新交易對
-            row[1].configure(text=pair_data['symbol'])
-            # 更新交易量
-            volume = pair_data['volume']
-            volume_text = f"{
-                volume/1000000:.1f}M" if volume > 1000000 else f"{volume/1000:.1f}K"
-            row[2].configure(text=f"{volume_text} USDT")
-            # 更新價格
-            row[3].configure(text=f"${pair_data['price']:.4f}")
-            # 更新漲跌幅
-            change = pair_data['price_change']
-            color = 'Success' if change >= 0 else 'Error'
-            row[4].configure(
-                text=f"{'+' if change >= 0 else ''}{change:.2f}%",
-                style=f'Value{color}.TLabel'
-            )
+        try:
+            for i, pair_data in enumerate(pairs_data):
+                # 更新排名
+                self.pair_rows[i][0].configure(text=f"#{i+1}")
+
+                # 更新交易對
+                self.pair_rows[i][1].configure(text=pair_data['symbol'])
+
+                # 更新交易量
+                volume = pair_data['volume']
+                volume_text = f"{
+                    volume/1000000:.1f}M" if volume > 1000000 else f"{volume/1000:.1f}K"
+                self.pair_rows[i][2].configure(text=f"{volume_text} USDT")
+
+                # 更新價格
+                self.pair_rows[i][3].configure(
+                    text=f"${pair_data['price']:.4f}")
+
+                # 更新漲跌幅
+                change = pair_data['price_change']
+                color = 'Success' if change >= 0 else 'Error'
+                self.pair_rows[i][4].configure(
+                    text=f"{'+' if change >= 0 else ''}{change:.2f}%",
+                    style=f'Value{color}.TLabel'
+                )
+        except Exception as e:
+            logging.error(f"更新熱門合約交易對顯示失敗: {str(e)}")
+            self.add_log(f"更新熱門合約交易對顯示失敗: {str(e)}", "error")
 
     def create_status_section(self, parent):
         """創建交易狀態監控區域"""
@@ -1479,28 +1488,54 @@ class TradingUI:
 
             # 獲取熱門交易對數據
             top_pairs = market_analyzer.get_top_volume_pairs(self.trading_bot)
+            if not top_pairs or not isinstance(top_pairs, list):
+                raise ValueError("無法獲取熱門交易對數據")
 
             # 準備數據格式
             pairs_data = []
-            for pair, volume in top_pairs:
+            for pair_info in top_pairs:
                 try:
+                    # 檢查pair_info的格式
+                    if isinstance(pair_info, (list, tuple)) and len(pair_info) >= 2:
+                        pair, volume = pair_info[0], pair_info[1]
+                    elif isinstance(pair_info, dict):
+                        pair = pair_info.get('symbol')
+                        volume = pair_info.get('volume', 0)
+                    else:
+                        continue
+
+                    if not pair:
+                        continue
+
+                    # 獲取交易對的即時數據
                     ticker = self.trading_bot.fetch_ticker(pair)
-                    pairs_data.append({
-                        'symbol': pair,
-                        'volume': volume,
-                        'price': ticker['last'],
-                        'price_change': ticker['percentage']
-                    })
+                    if ticker:
+                        pairs_data.append({
+                            'symbol': pair,
+                            'volume': float(volume) if volume else 0,
+                            'price': float(ticker.get('last', 0)),
+                            'price_change': float(ticker.get('percentage', 0))
+                        })
+
+                    # 只保留前5個交易對
+                    if len(pairs_data) >= 5:
+                        break
+
                 except Exception as e:
-                    logging.error(f"獲取{pair}數據失敗: {str(e)}")
+                    self.add_log(f"獲取{pair}數據失敗: {str(e)}", "warning")
                     continue
 
-            # 更新UI顯示
-            self.update_popular_pairs(pairs_data)
+            # 確保至少有一些數據
+            if pairs_data:
+                # 更新UI顯示
+                self.update_popular_pairs(pairs_data)
+            else:
+                self.add_log("無法獲取任何交易對數據", "warning")
 
         except Exception as e:
-            logging.error(f"更新熱門合約交易對失敗: {str(e)}")
-            messagebox.showerror("錯誤", f"更新熱門合約交易對失敗: {str(e)}")
+            error_msg = f"更新熱門合約交易對失敗: {str(e)}"
+            logging.error(error_msg)
+            self.add_log(error_msg, "error")
 
     def on_api_input_change(self, event):
         """處理API輸入框的變化事件"""

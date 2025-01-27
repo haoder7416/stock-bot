@@ -37,38 +37,60 @@ class EnhancedMarketAnalyzer:
             # 使用Pionex API獲取市場數據
             response = trading_bot.make_request(
                 'GET', '/api/v1/market/tickers')
+
+            # 檢查響應格式
+            if not isinstance(response, dict):
+                raise ValueError("API響應格式錯誤")
+
+            # 檢查result字段
             if not response.get('result', False):
                 raise ValueError("無法獲取市場數據")
 
-            # 篩選USDT合約對
-            pairs_data = []
-            tickers = response.get('data', [])
-            if isinstance(tickers, dict):  # 如果返回的是字典格式
-                tickers = [{'symbol': k, **v} for k, v in tickers.items()]
+            # 獲取tickers數據
+            tickers = response.get('data', {}).get('tickers', [])
+            if not isinstance(tickers, list):
+                raise ValueError("無效的tickers數據格式")
 
+            # 篩選USDT合約對並按交易量排序
+            usdt_pairs = []
             for ticker in tickers:
                 try:
                     symbol = ticker.get('symbol', '')
-                    if '_USDT' in symbol:  # Pionex使用_USDT格式
-                        volume = float(ticker.get('volume', 0))
-                        pairs_data.append((symbol, volume))
-                except (ValueError, TypeError) as e:
-                    logging.warning(f"處理交易對數據失敗: {str(e)}")
+                    if not symbol or 'USDT' not in symbol.upper():
+                        continue
+
+                    volume = float(ticker.get('amount', 0))
+                    if volume <= 0:
+                        continue
+
+                    usdt_pairs.append((symbol, volume))
+                except Exception as e:
+                    logging.warning(f"處理交易對{symbol}時出錯: {str(e)}")
+                    continue
+
+            # 按交易量排序並取前N個
+            usdt_pairs.sort(key=lambda x: x[1], reverse=True)
+            top_pairs = usdt_pairs[:limit]
+
+            # 獲取詳細數據
+            pairs_data = []
+            for symbol, _ in top_pairs:
+                try:
+                    ticker_data = trading_bot.fetch_ticker(symbol)
+                    pairs_data.append(ticker_data)
+                except Exception as e:
+                    logging.warning(f"獲取{symbol}詳細數據失敗: {str(e)}")
                     continue
 
             if not pairs_data:
                 raise ValueError("未找到活躍的USDT交易對")
 
-            # 按交易量排序並返回前N個
-            return sorted(
-                pairs_data,
-                key=lambda x: x[1],
-                reverse=True
-            )[:limit]
+            logging.info(f"成功獲取{len(pairs_data)}個交易對的詳細數據")
+            return pairs_data
 
         except Exception as e:
-            logging.error(f"獲取熱門合約交易對失敗: {str(e)}")
-            return []
+            logging.error(f"獲取熱門交易對失敗: {str(e)}")
+            raise
 
     def analyze_market_sentiment(self, symbol):
         """分析市場情緒"""

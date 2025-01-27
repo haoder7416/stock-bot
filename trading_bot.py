@@ -737,23 +737,49 @@ class PionexTradingBot:
             logging.error(f"情緒因子計算失敗: {str(e)}")
             return 1.0
 
+    def fetch_ticker(self, symbol):
+        """獲取單個交易對的行情數據"""
+        try:
+            response = self.make_request(
+                'GET', f'/api/v1/market/ticker?symbol={symbol}')
+
+            if not response.get('result', False):
+                raise ValueError(f"無法獲取{symbol}的行情數據")
+
+            ticker_data = response.get('data', {})
+            if not ticker_data:
+                raise ValueError(f"未找到{symbol}的行情數據")
+
+            return {
+                'symbol': symbol,
+                'price': float(ticker_data.get('close', 0)),
+                'volume': float(ticker_data.get('amount', 0)),
+                'price_change': ((float(ticker_data.get('close', 0)) - float(ticker_data.get('open', 0))) /
+                                 float(ticker_data.get('open', 1))) * 100
+            }
+        except Exception as e:
+            logging.warning(f"獲取{symbol}數據失敗: {str(e)}")
+            raise
+
     def update_trading_pairs(self):
         """更新交易對列表"""
         try:
             # 獲取前五大交易量幣種
-            top_pairs = self.market_analyzer.get_top_volume_pairs(
-                self.exchange
-            )
+            top_pairs = self.market_analyzer.get_top_volume_pairs(self)
 
             # 更新UI顯示
             if hasattr(self, 'ui'):
-                self.ui.update_top_volumes(top_pairs)
+                self.ui.update_popular_pairs(top_pairs)  # 直接傳遞完整的市場數據
 
             # 更新交易對列表
-            self.trading_pairs = [pair for pair, _ in top_pairs]
+            self.trading_pairs = [pair['symbol']
+                                  for pair in top_pairs]  # 只保存交易對名稱
+
+            logging.info(f"成功更新交易對列表: {self.trading_pairs}")
 
         except Exception as e:
             logging.error(f"更新交易對失敗: {str(e)}")
+            raise
 
     def schedule_update(self):
         # 實現定時更新邏輯

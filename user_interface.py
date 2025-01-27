@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox, font
 import json
 from PIL import Image, ImageTk
 from datetime import datetime
+import logging
+from market_analyzer import EnhancedMarketAnalyzer
 
 
 class TradingUI:
@@ -1201,24 +1203,34 @@ class TradingUI:
     def filter_logs(self):
         """根據選擇的過濾條件顯示日誌"""
         filter_type = self.log_filter.get()
-        self.status_text.tag_remove("hidden", "1.0", tk.END)
 
-        if filter_type != "全部":
-            # 隱藏不符合過濾條件的行
-            start = "1.0"
-            while True:
-                # 找到下一個標籤位置
-                tag_range = self.status_text.tag_nextrange(
-                    filter_type.lower(), start)
-                if not tag_range:
-                    break
-                # 隱藏這一行
-                line_start = self.status_text.index(
-                    f"{tag_range[0]} linestart")
-                line_end = self.status_text.index(
-                    f"{tag_range[0]} lineend + 1c")
-                self.status_text.tag_add("hidden", line_start, line_end)
-                start = line_end
+        try:
+            # 獲取所有日誌內容
+            all_content = self.status_text.get(1.0, tk.END)
+            self.status_text.delete(1.0, tk.END)
+
+            # 如果選擇顯示全部，直接返回所有內容
+            if filter_type == "全部":
+                self.status_text.insert(tk.END, all_content)
+                return
+
+            # 按行處理日誌
+            for line in all_content.split('\n'):
+                if line.strip():
+                    # 根據不同類型的日誌進行過濾
+                    if filter_type == "交易" and "[交易]" in line:
+                        self.status_text.insert(tk.END, line + "\n", "trade")
+                    elif filter_type == "信號" and "[信號]" in line:
+                        self.status_text.insert(tk.END, line + "\n", "signal")
+                    elif filter_type == "系統" and "[系統]" in line:
+                        self.status_text.insert(tk.END, line + "\n", "system")
+
+        except Exception as e:
+            logging.error(f"過濾日誌時發生錯誤: {str(e)}")
+            messagebox.showerror("錯誤", f"過濾日誌失敗: {str(e)}")
+            # 發生錯誤時恢復原始內容
+            self.status_text.delete(1.0, tk.END)
+            self.status_text.insert(tk.END, all_content)
 
     def add_log(self, message, log_type="system"):
         """添加日誌訊息"""
@@ -1334,3 +1346,186 @@ class TradingUI:
             text="虧損通知",
             variable=self.notify_loss
         ).pack(anchor="w", pady=2)
+
+    def test_api_connection(self):
+        """測試API連接"""
+        try:
+            # 驗證API金鑰
+            if not self.api_key.get() or not self.api_secret.get():
+                raise ValueError("請輸入API金鑰")
+
+            # 更新連接狀態
+            self.api_status_label.configure(
+                text="🟡 連接中...",
+                style='StatusWarning.TLabel'
+            )
+            self.window.update()
+
+            try:
+                # 初始化交易所連接
+                import ccxt
+                self.exchange = ccxt.binance({
+                    'apiKey': self.api_key.get().strip(),
+                    'secret': self.api_secret.get().strip(),
+                    'enableRateLimit': True,
+                    'options': {
+                        'defaultType': 'future',
+                    }
+                })
+
+                # 測試API連接
+                self.exchange.fetch_balance()
+
+                # 更新連接狀態
+                self.api_status_label.configure(
+                    text="🟢 已連接",
+                    style='StatusSuccess.TLabel'
+                )
+
+                # 獲取並更新熱門合約交易對
+                self.update_popular_pairs_data()
+
+                # 啟用交易相關設置
+                self.enable_trading_settings()
+
+            except Exception as e:
+                self.exchange = None
+                raise ValueError(f"連接失敗: {str(e)}")
+
+        except Exception as e:
+            self.api_status_label.configure(
+                text="🔴 連接失敗",
+                style='StatusError.TLabel'
+            )
+            messagebox.showerror("錯誤", str(e))
+
+    def update_popular_pairs_data(self):
+        """更新熱門合約交易對數據"""
+        try:
+            # 創建市場分析器實例
+            market_analyzer = EnhancedMarketAnalyzer()
+
+            # 獲取熱門交易對數據
+            top_pairs = market_analyzer.get_top_volume_pairs(self.exchange)
+
+            # 準備數據格式
+            pairs_data = []
+            for pair, volume in top_pairs:
+                try:
+                    ticker = self.exchange.fetch_ticker(pair)
+                    pairs_data.append({
+                        'symbol': pair,
+                        'volume': volume,
+                        'price': ticker['last'],
+                        'price_change': ticker['percentage']
+                    })
+                except Exception as e:
+                    logging.error(f"獲取{pair}數據失敗: {str(e)}")
+                    continue
+
+            # 更新UI顯示
+            self.update_popular_pairs(pairs_data)
+
+        except Exception as e:
+            logging.error(f"更新熱門合約交易對失敗: {str(e)}")
+            messagebox.showerror("錯誤", f"更新熱門合約交易對失敗: {str(e)}")
+
+    def on_api_input_change(self, event):
+        """處理API輸入框的變化事件"""
+        try:
+            # 檢查API金鑰是否已輸入
+            has_api_key = bool(self.api_key.get().strip())
+            has_api_secret = bool(self.api_secret.get().strip())
+
+            # 更新API狀態標籤
+            if has_api_key and has_api_secret:
+                self.api_status_label.configure(
+                    text="⚪ 未連接",
+                    style='StatusWarning.TLabel'
+                )
+            else:
+                self.api_status_label.configure(
+                    text="⚪ 未連接",
+                    style='StatusError.TLabel'
+                )
+
+            # 更新連接按鈕狀態
+            if has_api_key and has_api_secret:
+                self.connect_button.configure(state='normal')
+            else:
+                self.connect_button.configure(state='disabled')
+
+        except Exception as e:
+            logging.error(f"處理API輸入變化時發生錯誤: {str(e)}")
+
+    def on_entry_focus_in(self, event, placeholder):
+        """當輸入框獲得焦點時"""
+        if event.widget.get() == placeholder:
+            event.widget.delete(0, tk.END)
+            if event.widget == self.api_secret:
+                event.widget.configure(show="•")
+
+    def on_entry_focus_out(self, event, placeholder):
+        """當輸入框失去焦點時"""
+        if not event.widget.get():
+            event.widget.insert(0, placeholder)
+            if event.widget == self.api_secret and event.widget.get() == placeholder:
+                event.widget.configure(show="")
+
+    def toggle_secret_visibility(self):
+        """切換API密碼的顯示/隱藏狀態"""
+        try:
+            current_text = self.api_secret.get()
+            if current_text and current_text != "請輸入您的 API Secret":
+                if self.show_secret.get():
+                    self.api_secret.configure(show="")
+                else:
+                    self.api_secret.configure(show="•")
+        except Exception as e:
+            logging.error(f"切換密碼顯示狀態時發生錯誤: {str(e)}")
+
+    def clear_log(self):
+        """清除交易日誌"""
+        try:
+            # 清除日誌內容
+            self.status_text.delete(1.0, tk.END)
+
+            # 添加清除記錄
+            self.add_log("日誌已清除", "system")
+
+        except Exception as e:
+            logging.error(f"清除日誌時發生錯誤: {str(e)}")
+            messagebox.showerror("錯誤", f"清除日誌失敗: {str(e)}")
+
+    def create_control_buttons(self, parent):
+        """創建控制按鈕區域"""
+        button_frame = ttk.Frame(parent)
+        button_frame.pack(fill="x", padx=10, pady=5)
+
+        # 開始交易按鈕
+        self.start_button = ttk.Button(
+            button_frame,
+            text="開始交易",
+            style='Success.TButton',
+            command=self.start_trading
+        )
+        self.start_button.pack(side="left", padx=5)
+
+        # 停止交易按鈕
+        self.stop_button = ttk.Button(
+            button_frame,
+            text="停止交易",
+            style='Error.TButton',
+            command=self.stop_trading,
+            state='disabled'  # 初始時禁用
+        )
+        self.stop_button.pack(side="left", padx=5)
+
+        # 保存設置按鈕
+        self.save_button = ttk.Button(
+            button_frame,
+            text="保存設置",
+            style='Primary.TButton',
+            command=self.save_settings
+        )
+        self.save_button.pack(side="right", padx=5)

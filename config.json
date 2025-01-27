@@ -1,0 +1,111 @@
+{
+    "trading_pairs": ["BTC/USDT", "ETH/USDT"],
+    "check_interval": 300,
+    "grid_settings": {
+        "BTC/USDT": {
+            "grid_count": 15,
+            "investment_amount": 4000,
+            "price_range_percentage": 15,
+            "min_profit_percentage": 0.5,
+            "max_loss_percentage": 2.0,
+            "trailing_stop": true,
+            "trailing_stop_percentage": 1.0
+        },
+        "ETH/USDT": {
+            "grid_count": 12,
+            "investment_amount": 3000,
+            "price_range_percentage": 10,
+            "min_profit_percentage": 0.6,
+            "max_loss_percentage": 2.0,
+            "trailing_stop": true,
+            "trailing_stop_percentage": 1.2
+        }
+    },
+    "risk_management": {
+        "max_loss_percentage": 8,
+        "trailing_stop_percentage": 2,
+        "daily_loss_limit": 5,
+        "position_size_limit": 0.1,
+        "max_open_positions": 5,
+        "volatility_adjustment": true
+    },
+    "indicators": {
+        "rsi": {
+            "period": 14,
+            "oversold": 30,
+            "overbought": 70
+        },
+        "macd": {
+            "fast_period": 12,
+            "slow_period": 26,
+            "signal_period": 9
+        },
+        "bollinger_bands": {
+            "period": 20,
+            "std_dev": 2
+        },
+        "kdj": {
+            "k_period": 9,
+            "d_period": 3
+        }
+    },
+    "advanced_features": {
+        "dynamic_grid_adjustment": true,
+        "trend_following": true,
+        "volume_analysis": true,
+        "smart_entry_exit": true
+    },
+    "advanced_settings": {
+        "position_management": {
+            "max_positions_per_symbol": 3,
+            "position_scaling": true,
+            "scale_in_threshold": 0.02,
+            "scale_out_threshold": 0.015
+        },
+        "risk_control": {
+            "max_daily_trades": 10,
+            "max_daily_drawdown": 0.05,
+            "volatility_adjustment": true,
+            "dynamic_stop_loss": true
+        },
+        "market_analysis": {
+            "sentiment_weight": 0.3,
+            "technical_weight": 0.4,
+            "trend_weight": 0.3,
+            "minimum_confirmation_signals": 3
+        }
+    },
+    "optimization": {
+        "auto_parameter_adjustment": true,
+        "learning_rate": 0.01,
+        "optimization_interval": 24,
+        "minimum_sample_size": 100
+    },
+    "user_preferences": {
+        "risk_tolerance": "moderate",
+        "preferred_trading_style": "swing",
+        "notification_settings": {
+            "email_alerts": true,
+            "telegram_notifications": true,
+            "profit_alert_threshold": 2.0,
+            "loss_alert_threshold": -1.0
+        }
+    },
+    "advanced_trading": {
+        "smart_entry": {
+            "confirmation_signals": 3,
+            "entry_threshold": 0.8,
+            "volume_requirement": true
+        },
+        "smart_exit": {
+            "trailing_stop": true,
+            "profit_protection": true,
+            "dynamic_take_profit": true
+        },
+        "position_management": {
+            "smart_scaling": true,
+            "risk_based_sizing": true,
+            "maximum_leverage": 2.0
+        }
+    }
+} 

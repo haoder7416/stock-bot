@@ -199,67 +199,149 @@ class EnhancedMarketAnalyzer:
             logging.error(f"獲取熱門交易對失敗: {str(e)}")
             raise
 
+    def analyze_market(self, market_data):
+        """分析市場數據並生成交易信號"""
+        try:
+            # 基本數據驗證
+            if not isinstance(market_data, pd.DataFrame):
+                logging.error("市場數據格式錯誤")
+                return None
+
+            if len(market_data.index) == 0:
+                logging.error("市場數據為空")
+                return None
+
+            # 獲取最新的市場數據
+            latest_data = market_data.iloc[-1].to_dict()
+            symbol = latest_data.get('symbol')
+
+            if not symbol:
+                logging.error("無法獲取交易對信息")
+                return None
+
+            # 檢查必要的欄位
+            required_fields = ['close', 'volume',
+                               'price_change', 'volume_intensity', 'true_range']
+            for field in required_fields:
+                if field not in latest_data:
+                    logging.error(f"缺少必要的欄位: {field}")
+                    return None
+
+            # 計算基本指標
+            try:
+                price = float(latest_data['close'])
+                volume = float(latest_data['volume'])
+                price_change = float(latest_data['price_change'])
+                volume_intensity = float(latest_data['volume_intensity'])
+                true_range = float(latest_data['true_range'])
+            except (ValueError, TypeError) as e:
+                logging.error(f"數據轉換失敗: {str(e)}")
+                return None
+
+            # 計算技術指標
+            technical_data = {
+                'price': price,
+                'volume': volume,
+                'price_change': price_change,
+                'volume_intensity': volume_intensity,
+                'volatility': true_range / price if price > 0 else 0,
+                'market_strength': 1 if price_change > 0 and volume_intensity > 1000 else -1
+            }
+
+            # 分析市場情緒
+            sentiment_data = {
+                'trend_strength': technical_data['market_strength'],
+                'volume_trend': 1 if volume_intensity > 1000 else -1,
+                'volatility_level': technical_data['volatility'],
+                'market_momentum': price_change / 100
+            }
+
+            # 計算綜合得分
+            technical_score = technical_data['market_strength']
+            sentiment_score = (
+                sentiment_data['trend_strength'] +
+                sentiment_data['volume_trend'] +
+                sentiment_data['market_momentum']
+            ) / 3
+
+            # 生成交易信號
+            total_score = technical_score * 0.6 + sentiment_score * 0.4
+            signals = {
+                'symbol': symbol,
+                'timestamp': latest_data.get('timestamp', pd.Timestamp.now()),
+                'should_trade': False,
+                'trade_direction': None,
+                'confidence': 0,
+                'technical_indicators': technical_data,
+                'sentiment': sentiment_data,
+                'score': total_score
+            }
+
+            # 設置交易信號
+            if abs(total_score) > 0.5:
+                signals['should_trade'] = True
+                signals['trade_direction'] = 'buy' if total_score > 0 else 'sell'
+                signals['confidence'] = abs(total_score)
+
+            logging.info(f"成功分析 {symbol} 的市場數據")
+            return signals
+
+        except Exception as e:
+            logging.error(f"市場分析失敗: {str(e)}")
+            logging.error(f"錯誤詳情: {str(e.__class__.__name__)}")
+            return None
+
     def analyze_market_sentiment(self, symbol, market_data=None):
         """分析市場情緒"""
         try:
-            sentiment = {
-                'fear_greed_index': 50,  # 預設值
-                'trend_strength': 0,
-                'volume_trend': 0,
-                'volatility_level': 0,
-                'market_momentum': 0
-            }
-
             # 使用傳入的市場數據或獲取新數據
-            if market_data is not None:
-                data = market_data
-            else:
-                data = self.get_market_data(symbol)
-                if data is not None:
-                    # 如果是新獲取的數據，需要計算技術指標
-                    data = self.trading_bot.calculate_indicators(data)
-
-            if data is None:
-                logging.error(f"無法獲取 {symbol} 的市場數據")
-                return None
-
-            # 過濾特定交易對的數據
-            if isinstance(data, pd.DataFrame):
-                data = data[data['symbol'] == symbol]
-                if data.empty:
-                    logging.error(f"未找到 {symbol} 的市場數據")
+            if market_data is None:
+                market_data = self.get_market_data(symbol)
+                if market_data is None:
                     return None
 
-            latest_data = data.iloc[-1]
-
-            # 檢查必要的欄位是否存在
-            required_fields = ['market_strength',
-                               'volume_intensity', 'true_range', 'price_change']
-            missing_fields = [
-                field for field in required_fields if field not in latest_data]
-            if missing_fields:
-                logging.error(f"缺少必要的欄位: {', '.join(missing_fields)}")
+            # 基本數據驗證
+            if not isinstance(market_data, pd.DataFrame) or len(market_data.index) == 0:
+                logging.error(f"無效的市場數據格式: {symbol}")
                 return None
 
-            # 計算趨勢強度
-            sentiment['trend_strength'] = float(latest_data['market_strength'])
+            # 獲取最新數據
+            latest_data = market_data.iloc[-1].to_dict()
 
-            # 分析成交量趨勢
-            volume_intensity = float(latest_data['volume_intensity'])
-            sentiment['volume_trend'] = 1 if volume_intensity > 1000 else -1
+            # 檢查必要的欄位
+            required_fields = ['close', 'volume',
+                               'price_change', 'volume_intensity', 'true_range']
+            for field in required_fields:
+                if field not in latest_data:
+                    logging.error(f"缺少必要的欄位 {field}: {symbol}")
+                    return None
 
-            # 計算波動率
-            sentiment['volatility_level'] = float(
-                latest_data['true_range']) / float(latest_data['close'])
+            try:
+                # 轉換數據類型
+                price = float(latest_data['close'])
+                volume = float(latest_data['volume'])
+                price_change = float(latest_data['price_change'])
+                volume_intensity = float(latest_data['volume_intensity'])
+                true_range = float(latest_data['true_range'])
+            except (ValueError, TypeError) as e:
+                logging.error(f"數據轉換失敗 {symbol}: {str(e)}")
+                return None
 
-            # 計算市場動能
-            sentiment['market_momentum'] = float(
-                latest_data['price_change']) / 100
+            # 計算市場情緒指標
+            sentiment = {
+                'fear_greed_index': 50,  # 預設值
+                'trend_strength': 1 if price_change > 0 else -1,
+                'volume_trend': 1 if volume_intensity > 1000 else -1,
+                'volatility_level': true_range / price if price > 0 else 0,
+                'market_momentum': price_change / 100
+            }
 
+            logging.info(f"成功分析 {symbol} 的市場情緒")
             return sentiment
 
         except Exception as e:
-            logging.error(f"市場情緒分析失敗: {str(e)}")
+            logging.error(f"市場情緒分析失敗 {symbol}: {str(e)}")
+            logging.error(f"錯誤詳情: {str(e.__class__.__name__)}")
             return None
 
     def calculate_fear_greed_index(self, data):

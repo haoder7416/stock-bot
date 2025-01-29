@@ -6,6 +6,7 @@ import os
 from trading_bot import PionexTradingBot
 from market_analyzer import EnhancedMarketAnalyzer
 import getpass  # 添加 getpass 導入
+from ai_trade_advisor import AITradeAdvisor  # 添加這行導入
 
 
 class TradingUI:
@@ -323,9 +324,39 @@ class TradingUI:
                 print("\n請輸入 API 信息：")
                 api_key = input("API Key: ").strip()
                 api_secret = getpass.getpass("API Secret: ").strip()
+                openai_api_key = getpass.getpass(
+                    "OpenAI API Key (可選，按Enter跳過): ").strip()
+
+                # 如果用戶輸入了OpenAI API Key，進行驗證
+                if openai_api_key:
+                    print("\n正在驗證 OpenAI API Key...")
+                    temp_advisor = AITradeAdvisor(openai_api_key)
+                    is_valid, message = temp_advisor.validate_api_key()
+
+                    if not is_valid:
+                        print(f"\n❌ OpenAI API Key 驗證失敗: {message}")
+                        retry = input(
+                            "\n是否重新輸入 OpenAI API Key? (y/n): ").strip().lower()
+                        if retry == 'y':
+                            openai_api_key = getpass.getpass(
+                                "OpenAI API Key: ").strip()
+                            temp_advisor = AITradeAdvisor(openai_api_key)
+                            is_valid, message = temp_advisor.validate_api_key()
+                            if not is_valid:
+                                print(f"\n❌ OpenAI API Key 驗證再次失敗: {message}")
+                                print("將禁用 AI 功能")
+                                openai_api_key = None
+                        else:
+                            print("\n將禁用 AI 功能")
+                            openai_api_key = None
+                    else:
+                        print("\n✅ OpenAI API Key 驗證成功")
+                else:
+                    print("\n未提供 OpenAI API Key，AI 功能將被禁用")
 
                 print("\n正在連接到 Pionex...")
-                self.trading_bot = PionexTradingBot(api_key, api_secret)
+                self.trading_bot = PionexTradingBot(
+                    api_key, api_secret, openai_api_key)
 
             # 驗證投資金額
             validation = self.trading_bot.validate_investment_amount(
@@ -342,8 +373,10 @@ class TradingUI:
             if success:
                 self.is_trading = True
                 self.current_status = "交易中"
-                self.trading_start_time = datetime.now()  # 記錄開始時間
+                self.trading_start_time = datetime.now()
                 print("\n✅ 交易系統已成功啟動！")
+                if openai_api_key:
+                    print("AI 交易功能已啟用")
                 logging.info("交易系統已啟動")
             else:
                 print("\n❌ 交易系統啟動失敗")

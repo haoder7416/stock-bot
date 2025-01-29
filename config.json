@@ -7,28 +7,36 @@
     "grid_settings": {
         "BTC/USDT": {
             "grid_count": 15,
-            "investment_amount": 0.58,
             "price_range_percentage": 15,
             "min_profit_percentage": 0.5,
             "max_loss_percentage": 2.0,
             "trailing_stop": true,
-            "trailing_stop_percentage": 1.0
+            "trailing_stop_percentage": 1.0,
+            "investment_amount": 60.0,
+            "grid_levels": 5,
+            "price_deviation": 0.02
         },
         "ETH/USDT": {
             "grid_count": 12,
-            "investment_amount": 0.39,
             "price_range_percentage": 10,
             "min_profit_percentage": 0.6,
             "max_loss_percentage": 2.0,
             "trailing_stop": true,
-            "trailing_stop_percentage": 1.2
+            "trailing_stop_percentage": 1.2,
+            "investment_amount": 40.0,
+            "grid_levels": 4,
+            "price_deviation": 0.025
         }
     },
     "risk_management": {
         "max_loss_percentage": 5,
         "trailing_stop_percentage": 1.5,
         "daily_loss_limit": 4,
-        "position_size_limit": 0.15,
+        "max_position_size": 0.1,
+        "stop_loss_percentage": 2,
+        "take_profit_percentage": 6,
+        "max_leverage": 3,
+        "position_size_limit": 0.2,
         "max_open_positions": 6,
         "volatility_adjustment": true,
         "dynamic_risk_adjustment": true
@@ -115,5 +123,28 @@
             "risk_based_sizing": true,
             "maximum_leverage": 2.0
         }
+    },
+    "api_settings": {
+        "api_key": "",
+        "api_secret": ""
+    },
+    "trading_settings": {
+        "investment_amount": 100,
+        "leverage": 3,
+        "risk_level": "moderate",
+        "grid_trading": true,
+        "smart_entry": true,
+        "auto_compound": true
+    },
+    "ai_settings": {
+        "enabled": true,
+        "confidence_threshold": 0.7,
+        "min_probability_threshold": 0.6,
+        "max_position_adjustment": 0.2,
+        "risk_adjustment_factor": 0.8,
+        "analysis_timeframes": ["1h", "4h", "1d"],
+        "sentiment_weight": 0.3,
+        "technical_weight": 0.4,
+        "fundamental_weight": 0.3
     }
 }

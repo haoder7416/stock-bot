@@ -4,4 +4,5 @@ numpy
 requests
 python-telegram-bot
 ta-lib
-matplotlib 
+matplotlib
+openai>=1.0.0 

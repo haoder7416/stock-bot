@@ -1,34 +1,23 @@
-2025-01-29 22:28:38,133 - INFO - API 連接成功
-2025-01-29 22:28:38,134 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:28:41,297 - INFO - 成功獲取5個合約交易對的數據
-2025-01-29 22:29:26,281 - INFO - API 連接成功
-2025-01-29 22:29:26,283 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:30:48,199 - INFO - API 連接成功
-2025-01-29 22:30:48,199 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:30:48,442 - INFO - 成功獲取5個合約交易對的數據
-2025-01-29 22:30:48,442 - INFO - 成功更新交易對列表: ['BTC_USDT_PERP', 'ETH_USDT_PERP', 'SOL_USDT_PERP', 'XRP_USDT_PERP', 'ADA_USDT_PERP']
-2025-01-29 22:30:48,442 - INFO - 交易系統初始化成功
-2025-01-29 22:30:48,678 - INFO - 開始初始化交易設置...
-2025-01-29 22:30:48,679 - INFO - 當前交易設置: {'investment_amount': 3.0, 'leverage': 3, 'risk_level': '激進', 'grid_trading': True, 'smart_entry': True, 'auto_compound': True}
-2025-01-29 22:30:48,679 - INFO - 可用交易對: ['BTC_USDT_PERP', 'ETH_USDT_PERP', 'SOL_USDT_PERP', 'XRP_USDT_PERP', 'ADA_USDT_PERP']
-2025-01-29 22:30:48,679 - INFO - 已更新 BTC/USDT 的投資金額
-2025-01-29 22:30:48,679 - INFO - 已更新 ETH/USDT 的投資金額
-2025-01-29 22:30:48,679 - INFO - 交易設置初始化成功
-2025-01-29 22:30:48,679 - INFO - 開始執行交易策略...
-2025-01-29 22:30:49,026 - INFO - 成功獲取 330 個交易對的市場數據
-2025-01-29 22:30:49,035 - INFO - BTC_USDT_PERP 市場數據: 價格=102243.60, 24h漲跌=-0.29%, 成交量=31133.32, 市場強度=-1.0
-2025-01-29 22:30:49,039 - INFO - ETH_USDT_PERP 市場數據: 價格=3114.54, 24h漲跌=-1.77%, 成交量=553041.91, 市場強度=-1.0
-2025-01-29 22:30:49,042 - INFO - SOL_USDT_PERP 市場數據: 價格=228.26, 24h漲跌=-3.25%, 成交量=3074378.01, 市場強度=-1.0
-2025-01-29 22:30:49,044 - INFO - XRP_USDT_PERP 市場數據: 價格=3.07, 24h漲跌=-2.40%, 成交量=26941771.00, 市場強度=-1.0
-2025-01-29 22:30:49,046 - INFO - ADA_USDT_PERP 市場數據: 價格=0.92, 24h漲跌=-3.02%, 成交量=41084579.00, 市場強度=-1.0
-2025-01-29 22:30:49,047 - INFO - 交易系統啟動成功
-2025-01-29 22:30:49,047 - INFO - 交易系統已啟動
-2025-01-29 22:31:01,210 - INFO - API 連接成功
-2025-01-29 22:31:01,211 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:31:07,794 - INFO - 成功獲取5個合約交易對的數據
-2025-01-29 22:31:26,742 - INFO - 用戶設置已保存
-2025-01-29 22:31:29,162 - INFO - API 連接成功
-2025-01-29 22:31:29,162 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:31:46,729 - INFO - API 連接成功
-2025-01-29 22:31:46,730 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
-2025-01-29 22:31:54,223 - INFO - 成功獲取5個合約交易對的數據
+2025-01-29 23:31:09,518 - INFO - HTTP Request: GET https://api.openai.com/v1/models "HTTP/1.1 200 OK"
+2025-01-29 23:31:09,800 - INFO - API 連接成功
+2025-01-29 23:31:09,800 - INFO - 帳戶餘額: [{'coin': 'JUP', 'free': '0.09515', 'frozen': '0'}, {'coin': 'USDT', 'free': '126.69751662636', 'frozen': '0'}]
+2025-01-29 23:31:09,826 - INFO - AI交易顧問初始化成功
+2025-01-29 23:31:10,076 - INFO - 成功獲取5個合約交易對的數據
+2025-01-29 23:31:10,076 - INFO - 成功更新交易對列表: ['BTC_USDT_PERP', 'ETH_USDT_PERP', 'SOL_USDT_PERP', 'XRP_USDT_PERP', 'ADA_USDT_PERP']
+2025-01-29 23:31:10,076 - INFO - 交易系統初始化成功
+2025-01-29 23:31:10,767 - INFO - 成功獲取市場數據: 1 筆
+2025-01-29 23:31:10,768 - INFO - 成功分析 BTC_USDT_PERP 的市場數據
+2025-01-29 23:31:56,212 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-01-29 23:31:56,228 - INFO - AI市場分析完成
+2025-01-29 23:31:56,448 - ERROR - API 請求失敗: 404 Client Error: Not Found for url: https://api.pionex.com/api/v1/ticker/price?symbol=BTC_USDT_PERP&timestamp=1738164716229
+2025-01-29 23:31:56,448 - ERROR - 獲取 BTC_USDT_PERP 價格失敗: 404 Client Error: Not Found for url: https://api.pionex.com/api/v1/ticker/price?symbol=BTC_USDT_PERP&timestamp=1738164716229
+2025-01-29 23:31:56,449 - ERROR - 無法獲取 BTC_USDT_PERP 的當前價格
+2025-01-29 23:31:56,722 - INFO - 成功獲取市場數據: 1 筆
+2025-01-29 23:31:56,722 - INFO - 成功分析 ETH_USDT_PERP 的市場數據
+2025-01-29 23:32:29,724 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-01-29 23:32:29,951 - INFO - AI市場分析完成
+2025-01-29 23:32:30,343 - ERROR - API 請求失敗: 404 Client Error: Not Found for url: https://api.pionex.com/api/v1/ticker/price?symbol=ETH_USDT_PERP&timestamp=1738164749951
+2025-01-29 23:32:30,344 - ERROR - 獲取 ETH_USDT_PERP 價格失敗: 404 Client Error: Not Found for url: https://api.pionex.com/api/v1/ticker/price?symbol=ETH_USDT_PERP&timestamp=1738164749951
+2025-01-29 23:32:30,345 - ERROR - 無法獲取 ETH_USDT_PERP 的當前價格
+2025-01-29 23:32:30,595 - INFO - 成功獲取市場數據: 1 筆
+2025-01-29 23:32:30,595 - INFO - 成功分析 SOL_USDT_PERP 的市場數據

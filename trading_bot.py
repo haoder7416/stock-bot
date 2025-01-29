@@ -267,6 +267,7 @@ class PionexTradingBot:
                 price_position = (float(row['close']) - float(row['low'])) / \
                     (float(row['high']) - float(row['low'])) * \
                     100 if float(row['high']) != float(row['low']) else 50
+
                 df.at[index, 'price_position'] = price_position
 
             return df
@@ -289,28 +290,80 @@ class PionexTradingBot:
                 'market_strength': latest_data['market_strength'],
                 'price_position': latest_data['price_position'],
                 'should_trade': False,
-                'direction': None
+                'direction': None,
+                'trend_strong_up': False,
+                'trend_strong_down': False,
+                'rsi_oversold': False,
+                'rsi_overbought': False,
+                'kdj_oversold': False,
+                'kdj_overbought': False
             }
 
-            # 根據市場強度和價格位置判斷交易信號
-            if signals['market_strength'] > 0:  # 市場強勢
-                if signals['price_position'] < 30:  # 價格在低位
-                    signals['should_trade'] = True
-                    signals['direction'] = 'buy'
-            elif signals['market_strength'] < 0:  # 市場弱勢
-                if signals['price_position'] > 70:  # 價格在高位
-                    signals['should_trade'] = True
-                    signals['direction'] = 'sell'
+            # 計算額外的技術指標
+            rsi = self.calculate_rsi(df['close'])
+            k, d, j = self.calculate_kdj(df)
 
-            # 添加交易量確認
-            if signals['volume_intensity'] < 1000:  # 設定最小交易量閾值
-                signals['should_trade'] = False
+            # RSI 超買超賣
+            signals['rsi_oversold'] = rsi < 30
+            signals['rsi_overbought'] = rsi > 70
+
+            # KDJ 超買超賣
+            signals['kdj_oversold'] = k < 20 and d < 20
+            signals['kdj_overbought'] = k > 80 and d > 80
+
+            # 趨勢強度判斷
+            if signals['market_strength'] > 0 and signals['volume_intensity'] > 1000:
+                signals['trend_strong_up'] = True
+            elif signals['market_strength'] < 0 and signals['volume_intensity'] > 1000:
+                signals['trend_strong_down'] = True
+
+            # 多空信號綜合判斷
+            # 做多條件：趨勢向上 + (RSI超賣 或 KDJ超賣) + 價格位置低於30%
+            if signals['trend_strong_up'] and \
+               (signals['rsi_oversold'] or signals['kdj_oversold']) and \
+               signals['price_position'] < 30:
+                signals['should_trade'] = True
+                signals['direction'] = 'buy'
+
+            # 做空條件：趨勢向下 + (RSI超買 或 KDJ超買) + 價格位置高於70%
+            elif signals['trend_strong_down'] and \
+                (signals['rsi_overbought'] or signals['kdj_overbought']) and \
+                    signals['price_position'] > 70:
+                signals['should_trade'] = True
+                signals['direction'] = 'sell'
 
             return signals
 
         except Exception as e:
             logging.error(f"檢查交易信號失敗: {str(e)}")
             return None
+
+    def calculate_rsi(self, prices, period=14):
+        """計算 RSI 指標"""
+        try:
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            return rsi.iloc[-1]
+        except Exception as e:
+            logging.error(f"RSI 計算失敗: {str(e)}")
+            return 50
+
+    def calculate_kdj(self, df, n=9, m1=3, m2=3):
+        """計算 KDJ 指標"""
+        try:
+            low_list = df['low'].rolling(window=n).min()
+            high_list = df['high'].rolling(window=n).max()
+            rsv = (df['close'] - low_list) / (high_list - low_list) * 100
+            k = rsv.ewm(com=m1-1, adjust=True, min_periods=0).mean()
+            d = k.ewm(com=m2-1, adjust=True, min_periods=0).mean()
+            j = 3 * k - 2 * d
+            return k.iloc[-1], d.iloc[-1], j.iloc[-1]
+        except Exception as e:
+            logging.error(f"KDJ 計算失敗: {str(e)}")
+            return 50, 50, 50
 
     def initialize_trading(self):
         """初始化交易設置"""
@@ -347,41 +400,103 @@ class PionexTradingBot:
             json.dump(self.config, f, indent=4)
 
     def analyze_market_condition(self, df):
-        signals = self.check_signals(df)
-        market_state = {
-            'trend': self.analyze_trend(df),
-            'volatility': self.analyze_volatility(df),
-            'volume': self.analyze_volume(df),
-            'momentum': self.analyze_momentum(df)
-        }
+        """分析市場狀況"""
+        try:
+            signals = self.check_signals(df)
+            market_state = {
+                'trend': self.analyze_trend(df),
+                'volatility': self.analyze_volatility(df),
+                'volume': self.analyze_volume(df),
+                'momentum': self.analyze_momentum(df)
+            }
 
-        # 綜合評分系統
-        score = self.calculate_market_score(market_state, signals)
+            # 綜合評分系統
+            score = self.calculate_market_score(market_state, signals)
 
-        return {
-            'score': score,
-            'state': market_state,
-            'recommendation': self.get_trading_recommendation(score)
-        }
+            return {
+                'score': score,
+                'state': market_state,
+                'recommendation': self.get_trading_recommendation(score)
+            }
+        except Exception as e:
+            logging.error(f"市場分析失敗: {str(e)}")
+            return None
 
     def analyze_trend(self, df):
         """分析趨勢強度"""
-        trend_score = 0
+        try:
+            trend_score = 0
 
-        # EMA趨勢
-        if df['EMA50'].iloc[-1] > df['EMA200'].iloc[-1]:
-            trend_score += 2
+            # EMA趨勢
+            if df['EMA50'].iloc[-1] > df['EMA200'].iloc[-1]:
+                trend_score += 2
 
-        # 價格位置
-        if df['close'].iloc[-1] > df['EMA50'].iloc[-1]:
-            trend_score += 1
+            # 價格位置
+            if df['close'].iloc[-1] > df['EMA50'].iloc[-1]:
+                trend_score += 1
 
-        # 趨勢持續性
-        price_trend = df['close'].diff().rolling(window=20).mean()
-        if price_trend.iloc[-1] > 0:
-            trend_score += 1
+            # 趨勢持續性
+            price_trend = df['close'].diff().rolling(window=20).mean()
+            if price_trend.iloc[-1] > 0:
+                trend_score += 1
 
-        return trend_score
+            return trend_score
+        except Exception as e:
+            logging.error(f"趨勢分析失敗: {str(e)}")
+            return 0
+
+    def analyze_volatility(self, df):
+        """分析波動率"""
+        try:
+            # 計算波動率
+            returns = df['close'].pct_change()
+            volatility = returns.std()
+
+            # 根據波動率範圍評分
+            if volatility < 0.01:  # 低波動
+                return 1
+            elif volatility < 0.03:  # 中等波動
+                return 2
+            else:  # 高波動
+                return 3
+        except Exception as e:
+            logging.error(f"波動率分析失敗: {str(e)}")
+            return 0
+
+    def analyze_volume(self, df):
+        """分析成交量"""
+        try:
+            # 計算成交量變化
+            volume_ma = df['volume'].rolling(window=20).mean()
+            current_volume = df['volume'].iloc[-1]
+
+            # 根據成交量相對於均線的位置評分
+            if current_volume > volume_ma.iloc[-1] * 1.5:
+                return 3  # 成交量顯著放大
+            elif current_volume > volume_ma.iloc[-1]:
+                return 2  # 成交量高於均線
+            else:
+                return 1  # 成交量低於均線
+        except Exception as e:
+            logging.error(f"成交量分析失敗: {str(e)}")
+            return 0
+
+    def analyze_momentum(self, df):
+        """分析動量"""
+        try:
+            # 計算RSI
+            rsi = self.calculate_rsi(df['close'])
+
+            # 根據RSI評分
+            if rsi > 70:
+                return 3  # 強勢
+            elif rsi < 30:
+                return 1  # 弱勢
+            else:
+                return 2  # 中性
+        except Exception as e:
+            logging.error(f"動量分析失敗: {str(e)}")
+            return 0
 
     def execute_trading_strategy(self):
         """執行交易策略"""
@@ -436,7 +551,7 @@ class PionexTradingBot:
                                 continue
 
                             # 獲取動態止盈止損點
-                            targets = self.risk_manager.calculate_dynamic_targets(
+                            targets = self.calculate_dynamic_targets(
                                 pair, sentiment)
                             if targets is None:
                                 continue
@@ -468,315 +583,6 @@ class PionexTradingBot:
         except Exception as e:
             logging.error(f"執行交易策略失敗: {str(e)}")
             raise
-
-    def execute_long_strategy(self, symbol, grid_levels, investment_amount, signal_strength):
-        """執行做多策略"""
-        try:
-            current_price = self.exchange.fetch_ticker(symbol)['last']
-
-            # 根據信號強度調整網格參數
-            grid_count = int(grid_levels['grid_count']
-                             * (1 + signal_strength * 0.1))
-            price_range = grid_levels['price_range_percentage'] * \
-                (1 + signal_strength * 0.05)
-
-            lower_price = current_price * (1 - price_range / 100)
-            upper_price = current_price * (1 + price_range / 100)
-            grid_interval = (upper_price - lower_price) / grid_count
-
-            # 設置網格訂單
-            for i in range(grid_count):
-                grid_price = lower_price + (i * grid_interval)
-                order_amount = self.calculate_position_size(
-                    investment_amount, grid_count, signal_strength)
-
-                if grid_price < current_price:
-                    self.place_buy_order(
-                        symbol, order_amount * 1.2, grid_price)
-                else:
-                    self.place_sell_order(symbol, order_amount, grid_price)
-
-        except Exception as e:
-            logging.error(f"Long strategy error: {str(e)}")
-
-    def execute_short_strategy(self, symbol, grid_levels, investment_amount, signal_strength):
-        """執行做空策略"""
-        try:
-            current_price = self.exchange.fetch_ticker(symbol)['last']
-
-            # 根據信號強度調整網格參數
-            grid_count = int(grid_levels['grid_count']
-                             * (1 + signal_strength * 0.1))
-            price_range = grid_levels['price_range_percentage'] * \
-                (1 + signal_strength * 0.05)
-
-            lower_price = current_price * (1 - price_range / 100)
-            upper_price = current_price * (1 + price_range / 100)
-            grid_interval = (upper_price - lower_price) / grid_count
-
-            # 設置網格訂單
-            for i in range(grid_count):
-                grid_price = lower_price + (i * grid_interval)
-                order_amount = self.calculate_position_size(
-                    investment_amount, grid_count, signal_strength)
-
-                if grid_price > current_price:
-                    self.place_sell_order(
-                        symbol, order_amount * 1.2, grid_price)
-                else:
-                    self.place_buy_order(symbol, order_amount, grid_price)
-
-        except Exception as e:
-            logging.error(f"Short strategy error: {str(e)}")
-
-    def calculate_position_size(self, investment_amount, grid_count, signals):
-        base_amount = investment_amount / grid_count
-
-        # 根據信號強度調整倉位
-        signal_strength = 0
-        if signals['trend_strong_up']:
-            signal_strength += 0.2
-        if signals['trend_strong_down']:
-            signal_strength -= 0.2
-        if signals['rsi_oversold'] and signals['kdj_oversold']:
-            signal_strength += 0.15
-        if signals['rsi_overbought'] and signals['kdj_overbought']:
-            signal_strength -= 0.15
-
-        adjusted_amount = base_amount * (1 + signal_strength)
-        return max(adjusted_amount, base_amount * 0.5)  # 確保最小倉位
-
-    def update_profit_stats(self, trade):
-        self.profit_tracker['total_trades'] += 1
-        if trade['profit'] > 0:
-            self.profit_tracker['win_trades'] += 1
-        self.profit_tracker['daily_profit'] += trade['profit']
-        self.profit_tracker['total_profit'] += trade['profit']
-
-    def run(self):
-        """運行交易機器人"""
-        # 定期更新交易對列表
-        self.update_trading_pairs()
-
-        # 設置定時更新
-        self.schedule_update()
-
-    def print_trading_stats(self):
-        """打印交易統計信息"""
-        print("\n=== 交易統計 ===")
-        print(f"總交易次數: {self.profit_tracker['total_trades']}")
-        win_rate = (self.profit_tracker['win_trades'] / self.profit_tracker['total_trades']
-                    * 100) if self.profit_tracker['total_trades'] > 0 else 0
-        print(f"總勝率: {win_rate:.2f}%")
-        print(f"當日盈利: {self.profit_tracker['daily_profit']:.2f} USDT")
-        print(f"總盈利: {self.profit_tracker['total_profit']:.2f} USDT")
-        print("==================")
-
-    def manage_position(self, symbol, current_price, signal_strength):
-        """管理倉位加減"""
-        position = self.position_manager[symbol]
-        max_position = position['max_position_size']
-        current_position = position['current_position']
-
-        # 計算目標倉位
-        target_position = self.calculate_target_position(
-            symbol,
-            current_price,
-            signal_strength
-        )
-
-        if target_position > current_position:
-            # 需要加倉
-            if current_position < max_position:
-                add_amount = min(
-                    target_position - current_position,
-                    max_position - current_position
-                )
-                self.add_position(symbol, add_amount, current_price)
-        else:
-            # 需要減倉
-            if target_position < current_position:
-                reduce_amount = current_position - target_position
-                self.reduce_position(symbol, reduce_amount, current_price)
-
-    def calculate_target_position(self, symbol, current_price, signal_strength):
-        """計算目標倉位大小"""
-        position = self.position_manager[symbol]
-        base_position = position['max_position_size'] * 0.5  # 基礎倉位為最大倉位的50%
-
-        # 根據信號強度調整目標倉位
-        if signal_strength > 8:  # 強烈信號
-            return base_position * 1.5  # 最大加倉150%
-        elif signal_strength > 5:  # 中等信號
-            return base_position * 1.2  # 加倉120%
-        elif signal_strength < -8:  # 強烈反轉信號
-            return base_position * 0.3  # 減倉到30%
-        elif signal_strength < -5:  # 中等反轉信號
-            return base_position * 0.5  # 減倉到50%
-        else:
-            return base_position  # 保持基礎倉位
-
-    def add_position(self, symbol, amount, current_price):
-        """加倉操作"""
-        try:
-            # 檢查加倉條件
-            if self.check_add_position_conditions(symbol, current_price):
-                # 計算加倉金額
-                investment = amount * current_price
-
-                # 執行買入訂單
-                order = self.place_buy_order(symbol, amount, current_price)
-
-                if order['status'] == 'filled':
-                    # 更新倉位信息
-                    position = self.position_manager[symbol]
-                    position['current_position'] += amount
-                    position['total_investment'] += investment
-                    position['average_price'] = (
-                        position['total_investment'] /
-                        position['current_position']
-                    )
-
-                    # 記錄加倉操作
-                    logging.info(
-                        f"加倉成功 - {symbol}: 數量={amount}, 價格={current_price}")
-
-        except Exception as e:
-            logging.error(f"加倉失敗: {str(e)}")
-
-    def reduce_position(self, symbol, amount, current_price):
-        """減倉操作"""
-        try:
-            # 檢查減倉條件
-            if self.check_reduce_position_conditions(symbol, current_price):
-                # 執行賣出訂單
-                order = self.place_sell_order(symbol, amount, current_price)
-
-                if order['status'] == 'filled':
-                    # 更新倉位信息
-                    position = self.position_manager[symbol]
-                    position['current_position'] -= amount
-                    position['total_investment'] -= (amount *
-                                                     position['average_price'])
-
-                    if position['current_position'] > 0:
-                        position['average_price'] = (
-                            position['total_investment'] /
-                            position['current_position']
-                        )
-                    else:
-                        position['average_price'] = 0
-
-                    # 記錄減倉操作
-                    logging.info(
-                        f"減倉成功 - {symbol}: 數量={amount}, 價格={current_price}")
-
-        except Exception as e:
-            logging.error(f"減倉失敗: {str(e)}")
-
-    def check_add_position_conditions(self, symbol, current_price):
-        """檢查加倉條件"""
-        position = self.position_manager[symbol]
-
-        # 檢查是否達到最大倉位
-        if position['current_position'] >= position['max_position_size']:
-            return False
-
-        # 檢查當前價格是否適合加倉
-        if position['average_price'] > 0:
-            price_change = (
-                current_price - position['average_price']) / position['average_price']
-
-            # 如果虧損超過2%，不加倉
-            if price_change < -0.02:
-                return False
-
-            # 如果盈利超過3%，可以加倉
-            if price_change > 0.03:
-                return True
-
-        return True
-
-    def check_reduce_position_conditions(self, symbol, current_price):
-        """檢查減倉條件"""
-        position = self.position_manager[symbol]
-
-        if position['current_position'] <= 0:
-            return False
-
-        # 計算當前盈虧
-        price_change = (
-            current_price - position['average_price']) / position['average_price']
-
-        # 虧損達到止損線，強制減倉
-        if price_change < -0.02:  # -2%止損
-            return True
-
-        # 盈利回撤超過30%，保護利潤
-        if price_change > 0.05 and self.calculate_drawdown(symbol) > 0.3:
-            return True
-
-        return False
-
-    def calculate_drawdown(self, symbol):
-        """計算回撤幅度"""
-        df = self.get_market_data(symbol)
-        if df is None:
-            return 0
-
-        recent_high = df['high'].rolling(window=20).max().iloc[-1]
-        current_price = df['close'].iloc[-1]
-
-        return (recent_high - current_price) / recent_high
-
-    def optimize_position_management(self, symbol, sentiment):
-        """智能倉位管理"""
-        try:
-            # 基礎倉位大小
-            base_position = self.calculate_base_position(symbol)
-
-            # 根據市場情緒調整倉位
-            sentiment_factor = self.calculate_sentiment_factor(sentiment)
-
-            # 根據波動率調整倉位
-            volatility_factor = self.calculate_volatility_factor(symbol)
-
-            # 根據趨勢強度調整倉位
-            trend_factor = self.calculate_trend_factor(symbol)
-
-            # 綜合計算最終倉位
-            final_position = base_position * sentiment_factor * \
-                volatility_factor * trend_factor
-
-            # 應用風險限制
-            max_position = self.get_max_position_size(symbol)
-            return min(final_position, max_position)
-
-        except Exception as e:
-            logging.error(f"倉位優化失敗: {str(e)}")
-            return base_position
-
-    def calculate_sentiment_factor(self, sentiment):
-        """計算情緒因子"""
-        try:
-            # 恐懼貪婪指數影響
-            fear_greed_impact = 1 + (sentiment['fear_greed_index'] - 50) / 100
-
-            # 趨勢強度影響
-            trend_impact = 1 + sentiment['trend_strength'] * 0.5
-
-            # 成交量趨勢影響
-            volume_impact = 1 + sentiment['volume_trend'] * 0.3
-
-            # 綜合計算
-            factor = (fear_greed_impact + trend_impact + volume_impact) / 3
-
-            # 限制調整範圍
-            return max(0.5, min(1.5, factor))
-
-        except Exception as e:
-            logging.error(f"情緒因子計算失敗: {str(e)}")
-            return 1.0
 
     def update_trading_pairs(self):
         """更新交易對列表"""
@@ -892,9 +698,9 @@ class PionexTradingBot:
                 except Exception as e:
                     logging.error(f"市場數據更新失敗: {str(e)}")
 
-            # 設置下一次更新
-            if hasattr(self, 'window'):
-                self.window.after(60000, update_market_data)
+                # 設置下一次更新
+                if hasattr(self, 'window'):
+                    self.window.after(60000, update_market_data)
 
             # 開始第一次更新
             update_market_data()
@@ -959,44 +765,31 @@ class PionexTradingBot:
 
             # 檢查是否超過最大投資限額
             max_investment = available_usdt * 0.95  # 保留 5% 作為緩衝
-            if investment_amount > max_investment:
-                return {
-                    'valid': False,
-                    'message': f"投資金額過大！建議最大投資額: {max_investment:.2f} USDT",
-                    'available': available_usdt,
-                    'suggested': max_investment
-                }
-
             return {
                 'valid': True,
-                'available': available_usdt
+                'message': '投資金額有效',
+                'available': available_usdt,
+                'max_investment': max_investment
             }
 
         except Exception as e:
             logging.error(f"驗證投資金額失敗: {str(e)}")
-            return {
-                'valid': False,
-                'message': f"驗證失敗: {str(e)}"
-            }
+            return None
 
     def get_current_price(self, symbol):
         """獲取當前價格"""
         try:
-            # 使用 market/tickers API 獲取價格
-            params = {'type': 'PERP'}
-            response = self.make_request(
-                'GET', '/api/v1/market/tickers', params=params)
+            # 獲取最新市場數據
+            ticker = self.make_request('GET', f'/api/v1/ticker/{symbol}')
 
-            tickers = response.get('data', {}).get('tickers', [])
-            for ticker in tickers:
-                if ticker.get('symbol') == symbol:
-                    return float(ticker.get('close', 0))
+            if not ticker.get('result', False):
+                raise Exception('獲取價格失敗')
 
-            raise ValueError(f"未找到{symbol}的價格數據")
+            return float(ticker['data']['last'])
 
         except Exception as e:
-            logging.error(f"獲取{symbol}價格失敗: {str(e)}")
-            raise
+            logging.error(f"獲取 {symbol} 價格失敗: {str(e)}")
+            return None
 
     def calculate_position_size(self, symbol, risk_amount):
         """計算倉位大小"""
@@ -1183,3 +976,49 @@ class PionexTradingBot:
         except Exception as e:
             logging.error(f"啟動交易系統失敗: {str(e)}")
             return False
+
+    def optimize_position_management(self, pair, sentiment):
+        """優化倉位管理"""
+        try:
+            # 獲取帳戶餘額
+            account_info = self.get_account_status()
+            if account_info is None:
+                return None
+
+            # 根據市場情緒調整倉位大小
+            base_position = account_info['available_balance'] * 0.1
+            position_size = base_position * (1 + sentiment['confidence'])
+
+            # 確保不超過最大倉位限制
+            max_position = account_info['available_balance'] * 0.3
+            position_size = min(position_size, max_position)
+
+            return position_size
+
+        except Exception as e:
+            logging.error(f"倉位優化失敗: {str(e)}")
+            return None
+
+    def calculate_dynamic_targets(self, pair, sentiment):
+        """計算動態止盈止損點"""
+        try:
+            current_price = self.get_current_price(pair)
+            if current_price is None:
+                return None
+
+            # 根據市場情緒調整止盈止損比例
+            base_tp_ratio = 0.02  # 基礎止盈比例
+            base_sl_ratio = 0.01  # 基礎止損比例
+
+            # 調整止盈止損比例
+            tp_ratio = base_tp_ratio * (1 + sentiment['confidence'])
+            sl_ratio = base_sl_ratio * (1 - sentiment['confidence'] * 0.5)
+
+            return {
+                'take_profit': current_price * (1 + tp_ratio),
+                'stop_loss': current_price * (1 - sl_ratio)
+            }
+
+        except Exception as e:
+            logging.error(f"計算止盈止損點失敗: {str(e)}")
+            return None

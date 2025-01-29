@@ -246,22 +246,28 @@ class PionexTradingBot:
             if df.empty:
                 return None
 
+            # 複製數據以避免修改原始數據
+            df = df.copy()
+
             # 使用已計算的指標
-            latest_data = df.iloc[-1]
+            for index, row in df.iterrows():
+                # 計算市場強度指標
+                price_change = row['price_change']
+                volume_intensity = row['volume_intensity']
 
-            # 計算市場強度指標
-            market_strength = 0
-            if latest_data['price_change'] > 0 and latest_data['volume_intensity'] > 0:
-                market_strength = 1
-            elif latest_data['price_change'] < 0 and latest_data['volume_intensity'] > 0:
-                market_strength = -1
+                market_strength = 0
+                if price_change > 0 and volume_intensity > 1000:
+                    market_strength = 1
+                elif price_change < 0 and volume_intensity > 1000:
+                    market_strength = -1
 
-            df['market_strength'] = market_strength
+                df.at[index, 'market_strength'] = market_strength
 
-            # 計算價格位置
-            price_position = (float(latest_data['close']) - float(latest_data['low'])) / \
-                (float(latest_data['high']) - float(latest_data['low'])) * 100
-            df['price_position'] = price_position
+                # 計算價格位置
+                price_position = (float(row['close']) - float(row['low'])) / \
+                    (float(row['high']) - float(row['low'])) * \
+                    100 if float(row['high']) != float(row['low']) else 50
+                df.at[index, 'price_position'] = price_position
 
             return df
 
@@ -402,9 +408,9 @@ class PionexTradingBot:
                     if analysis is None:
                         continue
 
-                    # 獲取市場情緒（使用已有的市場數據）
+                    # 獲取市場情緒（使用已計算指標的數據）
                     sentiment = self.market_analyzer.analyze_market_sentiment(
-                        pair, market_data)
+                        pair, analysis)
                     if sentiment is None:
                         continue
 
@@ -414,10 +420,11 @@ class PionexTradingBot:
                         continue
 
                     # 記錄市場數據
-                    latest_data = pair_data.iloc[-1]
+                    latest_data = analysis.iloc[-1]
                     logging.info(f"{pair} 市場數據: 價格={latest_data['close']:.2f}, "
                                  f"24h漲跌={latest_data['price_change']:.2f}%, "
-                                 f"成交量={latest_data['volume']:.2f}")
+                                 f"成交量={latest_data['volume']:.2f}, "
+                                 f"市場強度={latest_data['market_strength']}")
 
                     # 根據信號執行交易
                     if signals.get('should_trade', False):

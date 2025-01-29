@@ -215,6 +215,9 @@ class EnhancedMarketAnalyzer:
                 data = market_data
             else:
                 data = self.get_market_data(symbol)
+                if data is not None:
+                    # 如果是新獲取的數據，需要計算技術指標
+                    data = self.trading_bot.calculate_indicators(data)
 
             if data is None:
                 logging.error(f"無法獲取 {symbol} 的市場數據")
@@ -229,18 +232,29 @@ class EnhancedMarketAnalyzer:
 
             latest_data = data.iloc[-1]
 
+            # 檢查必要的欄位是否存在
+            required_fields = ['market_strength',
+                               'volume_intensity', 'true_range', 'price_change']
+            missing_fields = [
+                field for field in required_fields if field not in latest_data]
+            if missing_fields:
+                logging.error(f"缺少必要的欄位: {', '.join(missing_fields)}")
+                return None
+
             # 計算趨勢強度
-            sentiment['trend_strength'] = latest_data['market_strength']
+            sentiment['trend_strength'] = float(latest_data['market_strength'])
 
             # 分析成交量趨勢
-            sentiment['volume_trend'] = 1 if latest_data['volume_intensity'] > 1000 else -1
+            volume_intensity = float(latest_data['volume_intensity'])
+            sentiment['volume_trend'] = 1 if volume_intensity > 1000 else -1
 
             # 計算波動率
-            sentiment['volatility_level'] = latest_data['true_range'] / \
-                latest_data['close']
+            sentiment['volatility_level'] = float(
+                latest_data['true_range']) / float(latest_data['close'])
 
             # 計算市場動能
-            sentiment['market_momentum'] = latest_data['price_change'] / 100
+            sentiment['market_momentum'] = float(
+                latest_data['price_change']) / 100
 
             return sentiment
 

@@ -316,39 +316,24 @@ class PionexTradingBot:
 
     def initialize_trading(self):
         """初始化交易設置"""
-        print("\n=== Pionex 智能交易系統 ===")
+        try:
+            # 檢查配置文件中是否已有投資金額設置
+            if not self.config.get('grid_settings'):
+                logging.error("配置文件中缺少網格設置")
+                return False
 
-        # 獲取投資金額
-        while True:
-            try:
-                investment_twd = float(input("\n請輸入您要投資的台幣金額: "))
-                if investment_twd <= 0:
-                    print("請輸入大於0的金額")
-                    continue
-                break
-            except ValueError:
-                print("請輸入有效的數字")
+            # 檢查每個交易對的設置
+            for pair, settings in self.config['grid_settings'].items():
+                if 'investment_amount' not in settings or settings['investment_amount'] <= 0:
+                    logging.error(f"{pair} 缺少有效的投資金額設置")
+                    return False
 
-        # 轉換為USDT (假設匯率 1 USD = 31 TWD)
-        investment_usdt = round(investment_twd / 31, 2)
+            logging.info("交易設置初始化成功")
+            return True
 
-        # 資金分配建議
-        print(f"\n您的投資金額相當於 {investment_usdt} USDT")
-        print("\n建議資金分配:")
-        print(f"BTC/USDT: {round(investment_usdt * 0.6, 2)} USDT (60%)")
-        print(f"ETH/USDT: {round(investment_usdt * 0.4, 2)} USDT (40%)")
-
-        # 確認分配
-        while True:
-            confirm = input("\n是否接受此分配方案？(y/n): ").lower()
-            if confirm == 'y':
-                self.update_investment_amounts(investment_usdt)
-                break
-            elif confirm == 'n':
-                print("\n請手動設置分配比例")
-                btc_percentage = float(input("BTC 分配比例 (0-100): ")) / 100
-                self.update_investment_amounts(investment_usdt, btc_percentage)
-                break
+        except Exception as e:
+            logging.error(f"初始化交易設置失敗: {str(e)}")
+            return False
 
     def update_investment_amounts(self, total_usdt, btc_percentage=0.6):
         """更新配置文件中的投資金額"""
@@ -405,46 +390,74 @@ class PionexTradingBot:
         try:
             # 使用當前熱門交易對
             for pair in self.trading_pairs:
-                # 獲取市場數據
-                market_data = self.get_market_data(pair)
-                if market_data is None:
+                try:
+                    # 獲取市場數據
+                    market_data = self.get_market_data(pair)
+                    if market_data is None or len(market_data) < 10:
+                        logging.warning(f"無法獲取足夠的 {pair} 市場數據，跳過此交易對")
+                        continue
+
+                    # 計算技術指標
+                    analysis = self.calculate_indicators(market_data)
+                    if analysis is None:
+                        logging.warning(f"計算 {pair} 技術指標失敗，跳過此交易對")
+                        continue
+
+                    # 獲取市場情緒
+                    sentiment = self.market_analyzer.analyze_market_sentiment(
+                        pair)
+                    if sentiment is None:
+                        logging.warning(f"分析 {pair} 市場情緒失敗，跳過此交易對")
+                        continue
+
+                    # 獲取交易信號
+                    signals = self.check_signals(analysis)
+                    if signals is None:
+                        logging.warning(f"獲取 {pair} 交易信號失敗，跳過此交易對")
+                        continue
+
+                    # 根據信號執行交易
+                    if signals.get('should_trade', False):
+                        try:
+                            # 計算倉位大小
+                            position_size = self.optimize_position_management(
+                                pair, sentiment)
+                            if position_size is None or position_size <= 0:
+                                logging.warning(f"{pair} 倉位優化失敗，跳過此交易")
+                                continue
+
+                            # 獲取動態止盈止損點
+                            targets = self.risk_manager.calculate_dynamic_targets(
+                                pair, sentiment)
+                            if targets is None:
+                                logging.warning(f"{pair} 計算止盈止損點失敗，跳過此交易")
+                                continue
+
+                            # 執行交易
+                            if signals.get('direction') == 'buy':
+                                self.place_order(
+                                    pair, 'buy', position_size,
+                                    take_profit=targets['take_profit'],
+                                    stop_loss=targets['stop_loss']
+                                )
+                            else:
+                                self.place_order(
+                                    pair, 'sell', position_size,
+                                    take_profit=targets['take_profit'],
+                                    stop_loss=targets['stop_loss']
+                                )
+
+                        except Exception as e:
+                            logging.error(f"執行 {pair} 交易失敗: {str(e)}")
+                            continue
+
+                except Exception as e:
+                    logging.error(f"處理交易對 {pair} 時發生錯誤: {str(e)}")
                     continue
-
-                # 計算技術指標
-                analysis = self.calculate_indicators(market_data)
-
-                # 獲取市場情緒
-                sentiment = self.market_analyzer.analyze_market_sentiment(pair)
-
-                # 獲取交易信號
-                signals = self.check_signals(analysis)
-
-                # 根據信號執行交易
-                if signals.get('should_trade', False):
-                    # 計算倉位大小
-                    position_size = self.optimize_position_management(
-                        pair, sentiment)
-
-                    # 獲取動態止盈止損點
-                    targets = self.risk_manager.calculate_dynamic_targets(
-                        pair, sentiment)
-
-                    # 執行交易
-                    if signals.get('direction') == 'buy':
-                        self.place_order(
-                            pair, 'buy', position_size,
-                            take_profit=targets['take_profit'],
-                            stop_loss=targets['stop_loss']
-                        )
-                    else:
-                        self.place_order(
-                            pair, 'sell', position_size,
-                            take_profit=targets['take_profit'],
-                            stop_loss=targets['stop_loss']
-                        )
 
         except Exception as e:
             logging.error(f"執行交易策略失敗: {str(e)}")
+            raise
 
     def execute_long_strategy(self, symbol, grid_levels, investment_amount, signal_strength):
         """執行做多策略"""
@@ -1137,16 +1150,18 @@ class PionexTradingBot:
             logging.info(f"當前交易設置: {settings}")
             logging.info(f"可用交易對: {self.trading_pairs}")
 
-            # 初始化交易設置
-            self.initialize_trading()
-
-            # 更新配置
+            # 更新配置中的投資金額
             for pair in self.trading_pairs:
                 formatted_pair = pair.replace('_PERP', '').replace('_', '/')
                 if formatted_pair in self.config['grid_settings']:
-                    self.config['grid_settings'][formatted_pair]['investment_amount'] = settings['investment_amount']
-                    logging.info(f"已更新 {formatted_pair} 的投資金額為 {
-                                 settings['investment_amount']} USDT")
+                    self.config['grid_settings'][formatted_pair]['investment_amount'] = settings.get(
+                        'investment_amount', 0)
+                    logging.info(f"已更新 {formatted_pair} 的投資金額")
+
+            # 初始化交易設置
+            if not self.initialize_trading():
+                logging.error("交易初始化失敗")
+                return False
 
             # 開始執行交易策略
             logging.info("開始執行交易策略...")
@@ -1156,5 +1171,5 @@ class PionexTradingBot:
             return True
 
         except Exception as e:
-            logging.error(f"執行交易策略失敗: {str(e)}")
+            logging.error(f"啟動交易系統失敗: {str(e)}")
             return False

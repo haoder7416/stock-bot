@@ -1,6 +1,6 @@
 {
-    "investment_amount": 2.3940074641562616,
-    "leverage": 1,
+    "investment_amount": 3.0,
+    "leverage": 3,
     "risk_level": "\u4fdd\u5b88",
     "grid_trading": true,
     "smart_entry": true,

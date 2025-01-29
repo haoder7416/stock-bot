@@ -8,7 +8,7 @@ class EnhancedMarketAnalyzer:
         self.market_data = {}
         self.analysis_results = {}
 
-    def get_market_data(self, symbol, timeframe='1h', limit=100):
+    def get_market_data(self, symbol, timeframe='1M', limit=100):
         """獲取市場數據"""
         try:
             # 格式化交易對符號
@@ -32,38 +32,64 @@ class EnhancedMarketAnalyzer:
             params = {
                 'symbol': formatted_symbol,
                 'interval': formatted_timeframe,
-                'limit': str(limit)
+                'limit': str(min(limit, 1000))  # 限制最大請求數量
             }
 
             logging.info(f"正在獲取 {formatted_symbol} 的市場數據，時間間隔: {
                          formatted_timeframe}")
 
-            # 使用交易機器人的 API 請求數據
-            response = self.trading_bot.make_request(
-                'GET', '/api/v1/market/klines', params)
+            # 最多重試3次
+            max_retries = 3
+            retry_count = 0
 
-            if not response.get('result', False):
-                raise Exception(f"獲取市場數據失敗: {response.get('message', '未知錯誤')}")
+            while retry_count < max_retries:
+                try:
+                    # 使用交易機器人的 API 請求數據
+                    response = self.trading_bot.make_request(
+                        'GET', '/api/v1/market/klines', params)
 
-            # 解析數據
-            klines = response.get('data', [])
-            if not klines:
-                logging.warning(f"未獲取到 {formatted_symbol} 的市場數據")
-                return None
+                    if not response.get('result', False):
+                        raise Exception(
+                            f"獲取市場數據失敗: {response.get('message', '未知錯誤')}")
 
-            # 轉換為 DataFrame
-            df = pd.DataFrame(klines, columns=[
-                'timestamp', 'open', 'high', 'low',
-                'close', 'volume', 'close_time', 'quote_volume',
-                'trades', 'taker_base', 'taker_quote'
-            ])
+                    # 解析數據
+                    klines = response.get('data', [])
+                    if not klines:
+                        retry_count += 1
+                        if retry_count == max_retries:
+                            logging.warning(f"未獲取到 {formatted_symbol} 的市場數據")
+                            return None
+                        continue
 
-            # 轉換數據類型
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = df[col].astype(float)
+                    # 轉換為 DataFrame
+                    df = pd.DataFrame(klines, columns=[
+                        'timestamp', 'open', 'high', 'low',
+                        'close', 'volume', 'close_time', 'quote_volume',
+                        'trades', 'taker_base', 'taker_quote'
+                    ])
 
-            return df
+                    # 轉換數據類型
+                    df['timestamp'] = pd.to_datetime(
+                        df['timestamp'], unit='ms')
+                    for col in ['open', 'high', 'low', 'close', 'volume']:
+                        df[col] = df[col].astype(float)
+
+                    # 驗證數據完整性
+                    if len(df) < 10:  # 至少需要10根K線
+                        logging.warning(f"獲取的數據量不足: {len(df)} < 10")
+                        retry_count += 1
+                        continue
+
+                    return df
+
+                except Exception as e:
+                    logging.error(
+                        f"獲取市場數據失敗(重試 {retry_count + 1}/{max_retries}): {str(e)}")
+                    retry_count += 1
+                    if retry_count == max_retries:
+                        return None
+
+            return None
 
         except Exception as e:
             logging.error(f"獲取市場數據失敗: {str(e)}")
@@ -197,8 +223,8 @@ class EnhancedMarketAnalyzer:
 
             # 獲取市場數據
             data = self.get_market_data(symbol, timeframe='4h', limit=100)
-            if data is None:
-                logging.warning(f"無法獲取 {symbol} 的市場數據")
+            if data is None or len(data) < 50:  # 確保有足夠的數據
+                logging.warning(f"無法獲取足夠的 {symbol} 市場數據")
                 return sentiment
 
             # 計算恐懼貪婪指數
@@ -206,25 +232,34 @@ class EnhancedMarketAnalyzer:
                 data)
 
             # 計算趨勢強度
-            close_prices = data['close']
-            ema20 = close_prices.ewm(span=20).mean()
-            ema50 = close_prices.ewm(span=50).mean()
-            sentiment['trend_strength'] = (
-                ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1]
+            if len(data) >= 50:
+                close_prices = data['close']
+                ema20 = close_prices.ewm(span=20).mean()
+                ema50 = close_prices.ewm(span=50).mean()
+                if not ema20.empty and not ema50.empty:
+                    sentiment['trend_strength'] = (
+                        ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1]
 
             # 分析成交量趨勢
-            volume = data['volume']
-            volume_ma = volume.rolling(window=20).mean()
-            sentiment['volume_trend'] = (
-                volume.iloc[-1] - volume_ma.iloc[-1]) / volume_ma.iloc[-1]
+            if len(data) >= 20:
+                volume = data['volume']
+                volume_ma = volume.rolling(window=20).mean()
+                if not volume.empty and not volume_ma.empty:
+                    sentiment['volume_trend'] = (
+                        volume.iloc[-1] - volume_ma.iloc[-1]) / volume_ma.iloc[-1]
 
             # 計算波動率
-            returns = close_prices.pct_change()
-            sentiment['volatility_level'] = returns.std()
+            if len(data) >= 2:
+                returns = data['close'].pct_change().dropna()
+                if not returns.empty:
+                    sentiment['volatility_level'] = returns.std()
 
             # 計算市場動能
-            sentiment['market_momentum'] = (
-                close_prices.iloc[-1] / close_prices.iloc[-20] - 1)
+            if len(data) >= 20:
+                close_prices = data['close']
+                if len(close_prices) >= 20:
+                    sentiment['market_momentum'] = (
+                        close_prices.iloc[-1] / close_prices.iloc[-20] - 1)
 
             return sentiment
 
@@ -284,3 +319,45 @@ class EnhancedMarketAnalyzer:
         except Exception as e:
             logging.error(f"市場趨勢分析失敗: {str(e)}")
             return None
+
+    def calculate_rsi(self, prices, period=14):
+        """計算 RSI 指標"""
+        try:
+            # 計算價格變化
+            delta = prices.diff()
+
+            # 分離漲跌
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+            # 計算 RS 和 RSI
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+
+            return rsi.iloc[-1] if not rsi.empty else 50
+
+        except Exception as e:
+            logging.error(f"RSI 計算失敗: {str(e)}")
+            return 50
+
+    def calculate_bollinger_bandwidth(self, data, period=20, num_std=2):
+        """計算布林帶寬度"""
+        try:
+            # 計算移動平均
+            ma = data['close'].rolling(window=period).mean()
+
+            # 計算標準差
+            std = data['close'].rolling(window=period).std()
+
+            # 計算上下軌
+            upper = ma + (std * num_std)
+            lower = ma - (std * num_std)
+
+            # 計算帶寬
+            bandwidth = (upper - lower) / ma
+
+            return bandwidth.iloc[-1] if not bandwidth.empty else 0.1
+
+        except Exception as e:
+            logging.error(f"布林帶寬度計算失敗: {str(e)}")
+            return 0.1

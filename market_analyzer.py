@@ -8,88 +8,77 @@ class EnhancedMarketAnalyzer:
         self.market_data = {}
         self.analysis_results = {}
 
-    def get_market_data(self, symbol, timeframe='1M', limit=100):
-        """獲取市場數據"""
+    def get_market_data(self, symbol=None, timeframe=None, limit=None):
+        """獲取市場數據
+        使用 Get 24hr Ticker API 獲取市場數據
+        """
         try:
-            # 格式化交易對符號
-            formatted_symbol = symbol.replace('/', '_').upper()
-            if not formatted_symbol.endswith('_PERP'):
-                formatted_symbol = f"{formatted_symbol}_PERP"
-
-            # 轉換時間框架格式
-            timeframe_mapping = {
-                '1m': '1M',
-                '5m': '5M',
-                '15m': '15M',
-                '30m': '30M',
-                '1h': '60M',
-                '4h': '4H',
-                '1d': '1D'
-            }
-            formatted_timeframe = timeframe_mapping.get(timeframe, timeframe)
-
             # 構建請求參數
-            params = {
-                'symbol': formatted_symbol,
-                'interval': formatted_timeframe,
-                'limit': str(min(limit, 1000))  # 限制最大請求數量
-            }
+            params = {'type': 'PERP'}  # 預設獲取所有永續合約
 
-            logging.info(f"正在獲取 {formatted_symbol} 的市場數據，時間間隔: {
-                         formatted_timeframe}")
+            if symbol:
+                # 格式化交易對符號
+                formatted_symbol = symbol.replace('/', '_').upper()
+                if not formatted_symbol.endswith('_PERP'):
+                    formatted_symbol = f"{formatted_symbol}_PERP"
+                params['symbol'] = formatted_symbol
 
-            # 最多重試3次
-            max_retries = 3
-            retry_count = 0
+            # 使用 tickers API
+            response = self.trading_bot.make_request(
+                'GET', '/api/v1/market/tickers', params)
 
-            while retry_count < max_retries:
-                try:
-                    # 使用交易機器人的 API 請求數據
-                    response = self.trading_bot.make_request(
-                        'GET', '/api/v1/market/klines', params)
+            if not response.get('result', False):
+                logging.error(f"獲取市場數據失敗: {response.get('message', '未知錯誤')}")
+                return None
 
-                    if not response.get('result', False):
-                        raise Exception(
-                            f"獲取市場數據失敗: {response.get('message', '未知錯誤')}")
+            tickers = response.get('data', {}).get('tickers', [])
+            if not tickers:
+                logging.error("未獲取到任何市場數據")
+                return None
 
-                    # 解析數據
-                    klines = response.get('data', [])
-                    if not klines:
-                        retry_count += 1
-                        if retry_count == max_retries:
-                            logging.warning(f"未獲取到 {formatted_symbol} 的市場數據")
-                            return None
-                        continue
+            # 轉換為 DataFrame
+            df = pd.DataFrame(tickers)
 
-                    # 轉換為 DataFrame
-                    df = pd.DataFrame(klines, columns=[
-                        'timestamp', 'open', 'high', 'low',
-                        'close', 'volume', 'close_time', 'quote_volume',
-                        'trades', 'taker_base', 'taker_quote'
-                    ])
+            # 過濾出永續合約數據
+            df = df[df['symbol'].str.endswith('_PERP')]
 
-                    # 轉換數據類型
-                    df['timestamp'] = pd.to_datetime(
-                        df['timestamp'], unit='ms')
-                    for col in ['open', 'high', 'low', 'close', 'volume']:
-                        df[col] = df[col].astype(float)
+            if df.empty:
+                logging.error("未找到任何永續合約數據")
+                return None
 
-                    # 驗證數據完整性
-                    if len(df) < 10:  # 至少需要10根K線
-                        logging.warning(f"獲取的數據量不足: {len(df)} < 10")
-                        retry_count += 1
-                        continue
+            # 重命名列以匹配現有代碼
+            df = df.rename(columns={
+                'time': 'timestamp',
+                'amount': 'quote_volume',
+                'count': 'trades'
+            })
 
-                    return df
+            # 轉換數據類型
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            numeric_columns = ['open', 'high', 'low',
+                               'close', 'volume', 'quote_volume']
+            for col in numeric_columns:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
 
-                except Exception as e:
-                    logging.error(
-                        f"獲取市場數據失敗(重試 {retry_count + 1}/{max_retries}): {str(e)}")
-                    retry_count += 1
-                    if retry_count == max_retries:
-                        return None
+            # 如果指定了特定交易對，過濾數據
+            if symbol:
+                df = df[df['symbol'] == params['symbol']]
+                if df.empty:
+                    logging.error(f"未找到 {symbol} 的市場數據")
+                    return None
 
-            return None
+            # 添加基本的技術指標
+            df['price_change'] = (
+                (df['close'] - df['open']) / df['open'] * 100)
+            df['true_range'] = df.apply(lambda x: max(
+                x['high'] - x['low'],
+                abs(x['high'] - x['close']),
+                abs(x['low'] - x['close'])
+            ), axis=1)
+            df['volume_intensity'] = df['volume'] * df['close']
+
+            return df
 
         except Exception as e:
             logging.error(f"獲取市場數據失敗: {str(e)}")
@@ -210,7 +199,7 @@ class EnhancedMarketAnalyzer:
             logging.error(f"獲取熱門交易對失敗: {str(e)}")
             raise
 
-    def analyze_market_sentiment(self, symbol):
+    def analyze_market_sentiment(self, symbol, market_data=None):
         """分析市場情緒"""
         try:
             sentiment = {
@@ -221,57 +210,43 @@ class EnhancedMarketAnalyzer:
                 'market_momentum': 0
             }
 
-            # 獲取市場數據
-            data = self.get_market_data(symbol, timeframe='4h', limit=100)
-            if data is None or len(data) < 50:  # 確保有足夠的數據
-                logging.warning(f"無法獲取足夠的 {symbol} 市場數據")
-                return sentiment
+            # 使用傳入的市場數據或獲取新數據
+            if market_data is not None:
+                data = market_data
+            else:
+                data = self.get_market_data(symbol)
 
-            # 計算恐懼貪婪指數
-            sentiment['fear_greed_index'] = self.calculate_fear_greed_index(
-                data)
+            if data is None:
+                logging.error(f"無法獲取 {symbol} 的市場數據")
+                return None
+
+            # 過濾特定交易對的數據
+            if isinstance(data, pd.DataFrame):
+                data = data[data['symbol'] == symbol]
+                if data.empty:
+                    logging.error(f"未找到 {symbol} 的市場數據")
+                    return None
+
+            latest_data = data.iloc[-1]
 
             # 計算趨勢強度
-            if len(data) >= 50:
-                close_prices = data['close']
-                ema20 = close_prices.ewm(span=20).mean()
-                ema50 = close_prices.ewm(span=50).mean()
-                if not ema20.empty and not ema50.empty:
-                    sentiment['trend_strength'] = (
-                        ema20.iloc[-1] - ema50.iloc[-1]) / ema50.iloc[-1]
+            sentiment['trend_strength'] = latest_data['market_strength']
 
             # 分析成交量趨勢
-            if len(data) >= 20:
-                volume = data['volume']
-                volume_ma = volume.rolling(window=20).mean()
-                if not volume.empty and not volume_ma.empty:
-                    sentiment['volume_trend'] = (
-                        volume.iloc[-1] - volume_ma.iloc[-1]) / volume_ma.iloc[-1]
+            sentiment['volume_trend'] = 1 if latest_data['volume_intensity'] > 1000 else -1
 
             # 計算波動率
-            if len(data) >= 2:
-                returns = data['close'].pct_change().dropna()
-                if not returns.empty:
-                    sentiment['volatility_level'] = returns.std()
+            sentiment['volatility_level'] = latest_data['true_range'] / \
+                latest_data['close']
 
             # 計算市場動能
-            if len(data) >= 20:
-                close_prices = data['close']
-                if len(close_prices) >= 20:
-                    sentiment['market_momentum'] = (
-                        close_prices.iloc[-1] / close_prices.iloc[-20] - 1)
+            sentiment['market_momentum'] = latest_data['price_change'] / 100
 
             return sentiment
 
         except Exception as e:
             logging.error(f"市場情緒分析失敗: {str(e)}")
-            return {
-                'fear_greed_index': 50,
-                'trend_strength': 0,
-                'volume_trend': 0,
-                'volatility_level': 0,
-                'market_momentum': 0
-            }
+            return None
 
     def calculate_fear_greed_index(self, data):
         """計算恐懼貪婪指數"""

@@ -239,80 +239,72 @@ class PionexTradingBot:
             self.config = json.load(f)
 
     def calculate_indicators(self, df):
-        # RSI 計算
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
+        """
+        基於24小時行情數據計算技術指標
+        """
+        try:
+            if df.empty:
+                return None
 
-        # MACD 計算
-        exp1 = df['close'].ewm(span=12, adjust=False).mean()
-        exp2 = df['close'].ewm(span=26, adjust=False).mean()
-        df['MACD'] = exp1 - exp2
-        df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            # 使用已計算的指標
+            latest_data = df.iloc[-1]
 
-        # 添加布林帶
-        df['SMA20'] = df['close'].rolling(window=20).mean()
-        df['stddev'] = df['close'].rolling(window=20).std()
-        df['BB_upper'] = df['SMA20'] + (df['stddev'] * 2)
-        df['BB_lower'] = df['SMA20'] - (df['stddev'] * 2)
+            # 計算市場強度指標
+            market_strength = 0
+            if latest_data['price_change'] > 0 and latest_data['volume_intensity'] > 0:
+                market_strength = 1
+            elif latest_data['price_change'] < 0 and latest_data['volume_intensity'] > 0:
+                market_strength = -1
 
-        # 添加 KDJ
-        low_min = df['low'].rolling(window=9).min()
-        high_max = df['high'].rolling(window=9).max()
-        df['RSV'] = (df['close'] - low_min) / (high_max - low_min) * 100
-        df['K'] = df['RSV'].ewm(com=2).mean()
-        df['D'] = df['K'].ewm(com=2).mean()
-        df['J'] = 3 * df['K'] - 2 * df['D']
+            df['market_strength'] = market_strength
 
-        # 添加趨勢強度指標
-        df['EMA50'] = df['close'].ewm(span=50).mean()
-        df['EMA200'] = df['close'].ewm(span=200).mean()
+            # 計算價格位置
+            price_position = (float(latest_data['close']) - float(latest_data['low'])) / \
+                (float(latest_data['high']) - float(latest_data['low'])) * 100
+            df['price_position'] = price_position
 
-        # 添加 ATR (Average True Range) 波動指標
-        df['TR'] = np.maximum(
-            df['high'] - df['low'],
-            np.maximum(
-                abs(df['high'] - df['close'].shift(1)),
-                abs(df['low'] - df['close'].shift(1))
-            )
-        )
-        df['ATR'] = df['TR'].rolling(window=14).mean()
+            return df
 
-        # 添加 OBV (On Balance Volume) 成交量指標
-        df['OBV'] = (np.sign(df['close'].diff()) *
-                     df['volume']).fillna(0).cumsum()
-
-        # 添加 Stochastic RSI
-        df['StochRSI'] = (df['RSI'] - df['RSI'].rolling(window=14).min()) / \
-            (df['RSI'].rolling(window=14).max() -
-             df['RSI'].rolling(window=14).min())
-
-        # 添加價格趨勢強度
-        df['Price_ROC'] = df['close'].pct_change(periods=14) * 100
-
-        return df
+        except Exception as e:
+            logging.error(f"計算技術指標失敗: {str(e)}")
+            return None
 
     def check_signals(self, df):
-        signals = {
-            'rsi_oversold': df['RSI'].iloc[-1] < 30,
-            'rsi_overbought': df['RSI'].iloc[-1] > 70,
-            'macd_crossover': (df['MACD'].iloc[-2] < df['Signal'].iloc[-2]) and
-            (df['MACD'].iloc[-1] > df['Signal'].iloc[-1]),
-            'macd_crossunder': (df['MACD'].iloc[-2] > df['Signal'].iloc[-2]) and
-            (df['MACD'].iloc[-1] < df['Signal'].iloc[-1]),
-            'bb_lower_break': df['close'].iloc[-1] < df['BB_lower'].iloc[-1],
-            'bb_upper_break': df['close'].iloc[-1] > df['BB_upper'].iloc[-1],
-            'kdj_oversold': df['J'].iloc[-1] < 20,
-            'kdj_overbought': df['J'].iloc[-1] > 80,
-            'trend_strong_up': (df['EMA50'].iloc[-1] > df['EMA200'].iloc[-1]) and
-            (df['close'].iloc[-1] > df['EMA50'].iloc[-1]),
-            'trend_strong_down': (df['EMA50'].iloc[-1] < df['EMA200'].iloc[-1]) and
-            (df['close'].iloc[-1] < df['EMA50'].iloc[-1]),
-            'should_trade': True
-        }
-        return signals
+        """檢查交易信號"""
+        try:
+            if df.empty:
+                return None
+
+            latest_data = df.iloc[-1]
+
+            signals = {
+                'price_change': latest_data['price_change'],
+                'volume_intensity': latest_data['volume_intensity'],
+                'market_strength': latest_data['market_strength'],
+                'price_position': latest_data['price_position'],
+                'should_trade': False,
+                'direction': None
+            }
+
+            # 根據市場強度和價格位置判斷交易信號
+            if signals['market_strength'] > 0:  # 市場強勢
+                if signals['price_position'] < 30:  # 價格在低位
+                    signals['should_trade'] = True
+                    signals['direction'] = 'buy'
+            elif signals['market_strength'] < 0:  # 市場弱勢
+                if signals['price_position'] > 70:  # 價格在高位
+                    signals['should_trade'] = True
+                    signals['direction'] = 'sell'
+
+            # 添加交易量確認
+            if signals['volume_intensity'] < 1000:  # 設定最小交易量閾值
+                signals['should_trade'] = False
+
+            return signals
+
+        except Exception as e:
+            logging.error(f"檢查交易信號失敗: {str(e)}")
+            return None
 
     def initialize_trading(self):
         """初始化交易設置"""
@@ -388,33 +380,44 @@ class PionexTradingBot:
     def execute_trading_strategy(self):
         """執行交易策略"""
         try:
-            # 使用當前熱門交易對
+            # 使用 tickers API 一次性獲取所有交易對數據
+            market_data = self.market_analyzer.get_market_data()
+            if market_data is None or market_data.empty:
+                logging.error("無法獲取市場數據")
+                return
+
+            logging.info(f"成功獲取 {len(market_data)} 個交易對的市場數據")
+
+            # 遍歷活躍的交易對
             for pair in self.trading_pairs:
                 try:
-                    # 獲取市場數據
-                    market_data = self.get_market_data(pair)
-                    if market_data is None or len(market_data) < 10:
-                        logging.warning(f"無法獲取足夠的 {pair} 市場數據，跳過此交易對")
+                    # 過濾特定交易對的數據
+                    pair_data = market_data[market_data['symbol'] == pair]
+                    if pair_data.empty:
+                        logging.error(f"未找到 {pair} 的市場數據")
                         continue
 
                     # 計算技術指標
-                    analysis = self.calculate_indicators(market_data)
+                    analysis = self.calculate_indicators(pair_data)
                     if analysis is None:
-                        logging.warning(f"計算 {pair} 技術指標失敗，跳過此交易對")
                         continue
 
-                    # 獲取市場情緒
+                    # 獲取市場情緒（使用已有的市場數據）
                     sentiment = self.market_analyzer.analyze_market_sentiment(
-                        pair)
+                        pair, market_data)
                     if sentiment is None:
-                        logging.warning(f"分析 {pair} 市場情緒失敗，跳過此交易對")
                         continue
 
                     # 獲取交易信號
                     signals = self.check_signals(analysis)
                     if signals is None:
-                        logging.warning(f"獲取 {pair} 交易信號失敗，跳過此交易對")
                         continue
+
+                    # 記錄市場數據
+                    latest_data = pair_data.iloc[-1]
+                    logging.info(f"{pair} 市場數據: 價格={latest_data['close']:.2f}, "
+                                 f"24h漲跌={latest_data['price_change']:.2f}%, "
+                                 f"成交量={latest_data['volume']:.2f}")
 
                     # 根據信號執行交易
                     if signals.get('should_trade', False):
@@ -423,29 +426,29 @@ class PionexTradingBot:
                             position_size = self.optimize_position_management(
                                 pair, sentiment)
                             if position_size is None or position_size <= 0:
-                                logging.warning(f"{pair} 倉位優化失敗，跳過此交易")
                                 continue
 
                             # 獲取動態止盈止損點
                             targets = self.risk_manager.calculate_dynamic_targets(
                                 pair, sentiment)
                             if targets is None:
-                                logging.warning(f"{pair} 計算止盈止損點失敗，跳過此交易")
                                 continue
 
                             # 執行交易
-                            if signals.get('direction') == 'buy':
+                            direction = signals.get('direction')
+                            if direction:
                                 self.place_order(
-                                    pair, 'buy', position_size,
+                                    pair,
+                                    direction,
+                                    position_size,
                                     take_profit=targets['take_profit'],
                                     stop_loss=targets['stop_loss']
                                 )
-                            else:
-                                self.place_order(
-                                    pair, 'sell', position_size,
-                                    take_profit=targets['take_profit'],
-                                    stop_loss=targets['stop_loss']
-                                )
+                                logging.info(f"下單成功: {pair} {direction} "
+                                             f"數量={position_size:.4f} "
+                                             f"止盈={
+                                                 targets['take_profit']:.2f} "
+                                             f"止損={targets['stop_loss']:.2f}")
 
                         except Exception as e:
                             logging.error(f"執行 {pair} 交易失敗: {str(e)}")
